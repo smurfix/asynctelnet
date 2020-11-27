@@ -8,8 +8,8 @@ import time
 import unittest.mock
 
 # local imports
-import telnetlib3
-from telnetlib3.tests.accessories import (
+import asynctelnet
+from asynctelnet.tests.accessories import (
     unused_tcp_port,
     event_loop,
     bind_host
@@ -22,9 +22,9 @@ import pexpect
 
 @pytest.mark.asyncio
 async def test_create_server(bind_host, unused_tcp_port):
-    """Test telnetlib3.create_server basic instantiation."""
+    """Test asynctelnet.create_server basic instantiation."""
     # exercise,
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         host=bind_host, port=unused_tcp_port)
 
 # disabled by jquast Sun Feb 17 13:44:15 PST 2019,
@@ -32,12 +32,12 @@ async def test_create_server(bind_host, unused_tcp_port):
 # is failing with additional, 'failed-reply:DO BINARY'
 #@pytest.mark.asyncio
 #async def test_open_connection(bind_host, unused_tcp_port):
-#    """Exercise telnetlib3.open_connection with default options."""
+#    """Exercise asynctelnet.open_connection with default options."""
 #    _waiter = asyncio.Future()
-#    await telnetlib3.create_server(bind_host, unused_tcp_port,
+#    await asynctelnet.create_server(bind_host, unused_tcp_port,
 #                                        _waiter_connected=_waiter,
 #                                        connect_maxwait=0.05)
-#    client_reader, client_writer = await telnetlib3.open_connection(
+#    client_reader, client_writer = await asynctelnet.open_connection(
 #        bind_host, unused_tcp_port, connect_minwait=0.05)
 #    server = await asyncio.wait_for(_waiter, 0.5)
 #    assert repr(server.writer) == (
@@ -53,10 +53,10 @@ async def test_create_server(bind_host, unused_tcp_port):
 @pytest.mark.asyncio
 async def test_create_server_conditionals(
         event_loop, bind_host, unused_tcp_port):
-    """Test telnetlib3.create_server conditionals."""
+    """Test asynctelnet.create_server conditionals."""
     # exercise,
-    await telnetlib3.create_server(
-        protocol_factory=lambda: telnetlib3.TelnetServer,
+    await asynctelnet.create_server(
+        protocol_factory=lambda: asynctelnet.TelnetServer,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
 
@@ -66,7 +66,7 @@ async def test_create_server_on_connect(event_loop, bind_host, unused_tcp_port):
     """Test on_connect() anonymous function callback of create_server."""
     # given,
     given_pf = unittest.mock.MagicMock()
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=given_pf,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -81,11 +81,11 @@ async def test_create_server_on_connect(event_loop, bind_host, unused_tcp_port):
 @pytest.mark.asyncio
 async def test_telnet_server_open_close(
         event_loop, bind_host, unused_tcp_port):
-    """Test telnetlib3.TelnetServer() instantiation and connection_made()."""
-    from telnetlib3.telopt import IAC, WONT, TTYPE
+    """Test asynctelnet.TelnetServer() instantiation and connection_made()."""
+    from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
     _waiter = asyncio.Future()
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -109,7 +109,7 @@ async def test_telnet_client_open_close_by_write(
     await event_loop.create_server(asyncio.Protocol,
                                         bind_host, unused_tcp_port)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port,
         connect_minwait=0.05)
     writer.close()
@@ -128,7 +128,7 @@ async def test_telnet_client_open_closed_by_peer(
     await event_loop.create_server(DisconnecterProtocol,
                                         bind_host, unused_tcp_port)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port,
         connect_minwait=0.05)
 
@@ -140,19 +140,19 @@ async def test_telnet_client_open_closed_by_peer(
 @pytest.mark.asyncio
 async def test_telnet_server_advanced_negotiation(
         event_loop, bind_host, unused_tcp_port):
-    """Test telnetlib3.TelnetServer() advanced negotiation."""
+    """Test asynctelnet.TelnetServer() advanced negotiation."""
     # given
-    from telnetlib3.telopt import (
+    from asynctelnet.telopt import (
         IAC, DO, WILL, SB, TTYPE, NEW_ENVIRON, NAWS, SGA, ECHO, CHARSET, BINARY
     )
     _waiter = asyncio.Future()
 
-    class ServerTestAdvanced(telnetlib3.TelnetServer):
+    class ServerTestAdvanced(asynctelnet.TelnetServer):
         def begin_advanced_negotiation(self):
             super().begin_advanced_negotiation()
             _waiter.set_result(self)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestAdvanced,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -188,7 +188,7 @@ async def test_telnet_server_closed_by_client(
     # given
     _waiter = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_closed=_waiter,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -216,7 +216,7 @@ async def test_telnet_server_eof_by_client(
     # given
     _waiter = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_closed=_waiter,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -236,13 +236,13 @@ async def test_telnet_server_eof_by_client(
 async def test_telnet_server_closed_by_server(
         event_loop, bind_host, unused_tcp_port):
     """Exercise TelnetServer.connection_lost by close()."""
-    from telnetlib3.telopt import IAC, DO, WONT, TTYPE
+    from asynctelnet.telopt import IAC, DO, WONT, TTYPE
 
     # given
     _waiter_connected = asyncio.Future()
     _waiter_closed = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter_connected,
         _waiter_closed=_waiter_closed,
         host=bind_host, port=unused_tcp_port,
@@ -276,13 +276,13 @@ async def test_telnet_server_closed_by_server(
 async def test_telnet_server_idle_duration(
         event_loop, bind_host, unused_tcp_port):
     """Exercise TelnetServer.idle property."""
-    from telnetlib3.telopt import IAC, WONT, TTYPE
+    from asynctelnet.telopt import IAC, WONT, TTYPE
 
     # given
     _waiter_connected = asyncio.Future()
     _waiter_closed = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter_connected,
         _waiter_closed=_waiter_closed,
         host=bind_host, port=unused_tcp_port,
@@ -303,7 +303,7 @@ async def test_telnet_server_idle_duration(
 async def test_telnet_client_idle_duration_minwait(
         event_loop, bind_host, unused_tcp_port):
     """Exercise TelnetClient.idle property and minimum connection time."""
-    from telnetlib3.telopt import IAC, WONT, TTYPE
+    from asynctelnet.telopt import IAC, WONT, TTYPE
 
     # a server that doesn't care
     await event_loop.create_server(asyncio.Protocol,
@@ -312,7 +312,7 @@ async def test_telnet_client_idle_duration_minwait(
     given_minwait = 0.100
 
     stime = time.time()
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         connect_minwait=given_minwait, connect_maxwait=given_minwait)
 
@@ -329,13 +329,13 @@ async def test_telnet_client_idle_duration_minwait(
 async def test_telnet_server_closed_by_error(
         event_loop, bind_host, unused_tcp_port):
     """Exercise TelnetServer.connection_lost by exception."""
-    from telnetlib3.telopt import IAC, DO, WONT, TTYPE
+    from asynctelnet.telopt import IAC, DO, WONT, TTYPE
 
     # given
     _waiter_connected = asyncio.Future()
     _waiter_closed = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter_connected,
         _waiter_closed=_waiter_closed,
         host=bind_host, port=unused_tcp_port,
@@ -369,7 +369,7 @@ async def test_telnet_client_open_close_by_error(
     class GivenException(Exception):
         pass
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, connect_minwait=0.05)
 
     writer.protocol.connection_lost(GivenException("candy corn 4 everyone"))
@@ -380,12 +380,12 @@ async def test_telnet_client_open_close_by_error(
 @pytest.mark.asyncio
 async def test_telnet_server_negotiation_fail(
         event_loop, bind_host, unused_tcp_port):
-    """Test telnetlib3.TelnetServer() negotiation failure with client."""
-    from telnetlib3.telopt import DO, TTYPE
+    """Test asynctelnet.TelnetServer() negotiation failure with client."""
+    from asynctelnet.telopt import DO, TTYPE
     # given
     _waiter_connected = asyncio.Future()
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter_connected,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, connect_maxwait=0.05)
@@ -410,11 +410,11 @@ async def test_telnet_server_negotiation_fail(
 @pytest.mark.asyncio
 async def test_telnet_client_negotiation_fail(
         event_loop, bind_host, unused_tcp_port):
-    """Test telnetlib3.TelnetCLient() negotiation failure with server."""
+    """Test asynctelnet.TelnetCLient() negotiation failure with server."""
 
-    class ClientNegotiationFail(telnetlib3.TelnetClient):
+    class ClientNegotiationFail(asynctelnet.TelnetClient):
         def connection_made(self, transport):
-            from telnetlib3.telopt import WILL, TTYPE
+            from asynctelnet.telopt import WILL, TTYPE
             super().connection_made(transport)
             # this creates a pending negotiation demand from the client-side.
             self.writer.iac(WILL, TTYPE)
@@ -427,7 +427,7 @@ async def test_telnet_client_negotiation_fail(
     given_maxwait = 0.100
 
     stime = time.time()
-    reader, writer = await asyncio.wait_for(telnetlib3.open_connection(
+    reader, writer = await asyncio.wait_for(asynctelnet.open_connection(
         client_factory=ClientNegotiationFail, host=bind_host,
         port=unused_tcp_port,
         connect_minwait=given_minwait,
@@ -440,9 +440,9 @@ async def test_telnet_client_negotiation_fail(
 
 @pytest.mark.asyncio
 async def test_telnet_server_as_module(event_loop):
-    """Test __main__ hook, when executing python -m telnetlib3.server --help"""
+    """Test __main__ hook, when executing python -m asynctelnet.server --help"""
     prog = sys.executable
-    args = [prog, '-m', 'telnetlib3.server', '--help']
+    args = [prog, '-m', 'asynctelnet.server', '--help']
     proc = await asyncio.create_subprocess_exec(
         *args, loop=event_loop, stdout=asyncio.subprocess.PIPE,
                                 stderr=asyncio.subprocess.PIPE)
@@ -456,9 +456,9 @@ async def test_telnet_server_as_module(event_loop):
 
 @pytest.mark.asyncio
 async def test_telnet_server_cmdline(bind_host, unused_tcp_port, event_loop):
-    """Test executing telnetlib3/server.py as server"""
+    """Test executing asynctelnet/server.py as server"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
-    prog = pexpect.which('telnetlib3-server')
+    prog = pexpect.which('asynctelnet-server')
     args = [prog, bind_host, str(unused_tcp_port), '--loglevel=info',
             '--connect-maxwait=0.05']
     proc = await asyncio.create_subprocess_exec(
@@ -498,9 +498,9 @@ async def test_telnet_server_cmdline(bind_host, unused_tcp_port, event_loop):
 
 @pytest.mark.asyncio
 async def test_telnet_client_as_module(event_loop):
-    """Test __main__ hook, when executing python -m telnetlib3.client --help"""
+    """Test __main__ hook, when executing python -m asynctelnet.client --help"""
     prog = sys.executable
-    args = [prog, '-m', 'telnetlib3.client', '--help']
+    args = [prog, '-m', 'asynctelnet.client', '--help']
     proc = await asyncio.create_subprocess_exec(
         *args, loop=event_loop, stdout=asyncio.subprocess.PIPE,
                                 stderr=asyncio.subprocess.PIPE)
@@ -514,10 +514,10 @@ async def test_telnet_client_as_module(event_loop):
 
 @pytest.mark.asyncio
 async def test_telnet_client_cmdline(bind_host, unused_tcp_port, event_loop):
-    """Test executing telnetlib3/client.py as client"""
+    """Test executing asynctelnet/client.py as client"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
     # we especially need pexpect to pass sys.stdin.isatty() test.
-    prog = pexpect.which('telnetlib3-client')
+    prog = pexpect.which('asynctelnet-client')
     args = [prog, bind_host, str(unused_tcp_port), '--loglevel=info',
             '--connect-minwait=0.05', '--connect-maxwait=0.05']
 
@@ -551,10 +551,10 @@ async def test_telnet_client_cmdline(bind_host, unused_tcp_port, event_loop):
 @pytest.mark.asyncio
 async def test_telnet_client_tty_cmdline(bind_host, unused_tcp_port,
                                    event_loop):
-    """Test executing telnetlib3/client.py as client using a tty (pexpect)"""
+    """Test executing asynctelnet/client.py as client using a tty (pexpect)"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
     # we especially need pexpect to pass sys.stdin.isatty() test.
-    prog, args = 'telnetlib3-client', [
+    prog, args = 'asynctelnet-client', [
         bind_host, str(unused_tcp_port), '--loglevel=warning',
         '--connect-minwait=0.05', '--connect-maxwait=0.05']
 
@@ -581,8 +581,8 @@ async def test_telnet_client_cmdline_stdin_pipe(bind_host, unused_tcp_port,
     """Test sending data through command-line client (by os PIPE)."""
     # this code may be reduced when pexpect asyncio is bugfixed ..
     # we especially need pexpect to pass sys.stdin.isatty() test.
-    prog = pexpect.which('telnetlib3-client')
-    fd, logfile = tempfile.mkstemp(prefix='telnetlib3', suffix='.log')
+    prog = pexpect.which('asynctelnet-client')
+    fd, logfile = tempfile.mkstemp(prefix='asynctelnet', suffix='.log')
     os.close(fd)
 
     args = [prog, bind_host, str(unused_tcp_port), '--loglevel=info',
@@ -600,7 +600,7 @@ async def test_telnet_client_cmdline_stdin_pipe(bind_host, unused_tcp_port,
         writer.close()
 
     # start server
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         host=bind_host, port=unused_tcp_port,
         shell=shell, loop=event_loop,
         connect_maxwait=0.05)

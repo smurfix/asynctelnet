@@ -1,4 +1,4 @@
-"""Test accessories for telnetlib3 project."""
+"""Test accessories for asynctelnet project."""
 # std imports
 import logging
 

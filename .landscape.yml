@@ -5,7 +5,7 @@ ignore-patterns:
     - (^|/)\..+
     - ^docs/
     - ^build/
-    - ^telnetlib3/tests/
+    - ^asynctelnet/tests/
 
 test-warnings: true
 

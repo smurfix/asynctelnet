@@ -1,5 +1,5 @@
 client_shell
 ------------
 
-.. automodule:: telnetlib3.client_shell
+.. automodule:: asynctelnet.client_shell
    :members:

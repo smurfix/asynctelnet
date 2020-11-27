@@ -13,31 +13,32 @@ def _get_long_description(fname, encoding='utf8'):
     return open(fname, 'r', encoding=encoding).read()
 
 
-setup(name='telnetlib3',
+setup(name='asynctelnet',
       # keep in sync w/docs/conf.py manually for now, please!
-      version='1.0.3',
-      url='http://telnetlib3.rtfd.org/',
+      url='http://asynctelnet.readthedocs.io/',
       license='ISC',
-      author='Jeff Quast',
-      description="Python 3 asyncio Telnet server and client Protocol library",
+      author='Matthias Urlichs',
+      description="Python 3 anyio Telnet server and client Protocol library",
       long_description=_get_long_description(fname=_get_here('README.rst')),
-      packages=['telnetlib3'],
+      packages=['asynctelnet'],
       package_data={'': ['README.rst', 'requirements.txt'], },
       entry_points={
          'console_scripts': [
-             'telnetlib3-server = telnetlib3.server:main',
-             'telnetlib3-client = telnetlib3.client:main'
+             'asynctelnet-server = asynctelnet.server:main',
+             'asynctelnet-client = asynctelnet.client:main'
          ]},
-      author_email='contact@jeffquast.com',
+      author_email='matthias@urlichs.de',
       platforms='any',
       zip_safe=True,
       keywords=', '.join(('telnet', 'server', 'client', 'bbs', 'mud', 'utf8',
-                          'cp437', 'api', 'library', 'asyncio', 'talker')),
+                          'cp437', 'api', 'library', 'anyio', 'trio', 'asyncio', 'talker')),
       classifiers=['License :: OSI Approved :: ISC License (ISCL)',
-                   'Programming Language :: Python :: 3.3',
-                   'Programming Language :: Python :: 3.4',
+                   'Programming Language :: Python :: 3.6',
+                   'Programming Language :: Python :: 3.7',
+                   'Programming Language :: Python :: 3.8',
+                   'Programming Language :: Python :: 3.9',
                    'Intended Audience :: Developers',
-                   'Development Status :: 4 - Beta',
+                   'Development Status :: 3 - Alpha',
                    'Topic :: System :: Networking',
                    'Topic :: Terminals :: Telnet',
                    'Topic :: System :: Shells',

@@ -1,6 +1,6 @@
 """
 The ``main`` function here is wired to the command line tool by name
-telnetlib3-server.  If this server's PID receives the SIGTERM signal, it
+asynctelnet-server.  If this server's PID receives the SIGTERM signal, it
 attempts to shutdown gracefully.
 
 The :class:`TelnetServer` class negotiates a character-at-a-time (WILL-SGA,
@@ -27,7 +27,7 @@ CONFIG = collections.namedtuple('CONFIG', [
     'force_binary', 'timeout', 'connect_maxwait'])(
         host='localhost', port=6023, loglevel='info',
         logfile=None, logfmt=accessories._DEFAULT_LOGFMT ,
-        shell=accessories.function_lookup('telnetlib3.telnet_server_shell'),
+        shell=accessories.function_lookup('asynctelnet.telnet_server_shell'),
         encoding='utf8', force_binary=False, timeout=300, connect_maxwait=4.0)
 
 
@@ -385,7 +385,7 @@ def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
         The reader is a :class:`~.TelnetReader` instance, the writer is
         a :class:`~.TelnetWriter` instance.
     :param logging.Logger log: target logger, if None is given, one is created
-        using the namespace ``'telnetlib3.server'``.
+        using the namespace ``'asynctelnet.server'``.
     :param str encoding: The default assumed encoding, or ``False`` to disable
         unicode support.  Encoding may be negotiation to another value by
         the client through NEW_ENVIRON :rfc:`1572` by sending environment value
@@ -482,7 +482,7 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
     SIGTERM.
     """
     log = accessories.make_logger(
-        name='telnetlib3.server', loglevel=loglevel,
+        name='asynctelnet.server', loglevel=loglevel,
         logfile=logfile, logfmt=logfmt)
 
     # log all function arguments.
@@ -516,7 +516,7 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
 
 
 def main():
-    """Command-line 'telnetlib3-server' entry point, via setuptools."""
+    """Command-line 'asynctelnet-server' entry point, via setuptools."""
     return run_server(**parse_server_args())
 
 

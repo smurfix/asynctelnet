@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Telnet Client API for the 'telnetlib3' python package.
+Telnet Client API for the 'asynctelnet' python package.
 """
 # std imports
 import argparse
@@ -57,8 +57,8 @@ class TelnetClient(client_base.BaseClient):
 
     def connection_made(self, transport):
         """Callback for connection made to server."""
-        from telnetlib3.telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON
-        from telnetlib3.telopt import CHARSET, NAWS
+        from asynctelnet.telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON
+        from asynctelnet.telopt import CHARSET, NAWS
         super().connection_made(transport)
 
         # Wire extended rfc callbacks for requests of
@@ -254,7 +254,7 @@ def open_connection(host=None, port=23, *, client_factory=None, loop=None,
     :param tuple local_addr: Same meaning as
         :meth:`asyncio.loop.create_connection`.
     :param logging.Logger log: target logger, if None is given, one is created
-        using the namespace ``'telnetlib3.server'``.
+        using the namespace ``'asynctelnet.server'``.
     :param str encoding: The default assumed encoding, or ``False`` to disable
         unicode support.  This value is used for decoding bytes received by and
         encoding bytes transmitted to the Server.  These values are preferred
@@ -335,7 +335,7 @@ def open_connection(host=None, port=23, *, client_factory=None, loop=None,
 
 
 def main():
-    """Command-line 'telnetlib3-client' entry point, via setuptools."""
+    """Command-line 'asynctelnet-client' entry point, via setuptools."""
     kwargs = _transform_args(_get_argument_parser().parse_args())
     config_msg = (
         'Client configuration: {key_values}'
@@ -376,7 +376,7 @@ def _get_argument_parser():
                         help='log format')
     parser.add_argument('--logfile',
                         help='filepath')
-    parser.add_argument('--shell', default='telnetlib3.telnet_client_shell',
+    parser.add_argument('--shell', default='asynctelnet.telnet_client_shell',
                         help='module.function_name')
     parser.add_argument('--encoding', default='utf8',
                         help='encoding name')

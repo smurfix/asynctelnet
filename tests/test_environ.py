@@ -3,9 +3,9 @@
 import asyncio
 
 # local imports
-import telnetlib3
-import telnetlib3.stream_writer
-from telnetlib3.tests.accessories import (
+import asynctelnet
+import asynctelnet.stream_writer
+from asynctelnet.tests.accessories import (
     unused_tcp_port,
     event_loop,
     bind_host
@@ -20,17 +20,17 @@ async def test_telnet_server_on_environ(
         event_loop, bind_host, unused_tcp_port):
     """Test Server's callback method on_environ()."""
     # given
-    from telnetlib3.telopt import (
+    from asynctelnet.telopt import (
         IAC, WILL, SB, SE, IS, NEW_ENVIRON
     )
     _waiter = asyncio.Future()
 
-    class ServerTestEnviron(telnetlib3.TelnetServer):
+    class ServerTestEnviron(asynctelnet.TelnetServer):
         def on_environ(self, mapping):
             super().on_environ(mapping)
             _waiter.set_result(self)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -41,7 +41,7 @@ async def test_telnet_server_on_environ(
     # exercise,
     writer.write(IAC + WILL + NEW_ENVIRON)
     writer.write(IAC + SB + NEW_ENVIRON + IS +
-                 telnetlib3.stream_writer._encode_env_buf({
+                 asynctelnet.stream_writer._encode_env_buf({
                      # note how the default implementation .upper() cases
                      # all environment keys.
                      'aLpHa': 'oMeGa',
@@ -67,17 +67,17 @@ async def test_telnet_client_send_environ(event_loop, bind_host,
     given_encoding = 'cp437'
     given_term = 'vt220'
 
-    class ServerTestEnviron(telnetlib3.TelnetServer):
+    class ServerTestEnviron(asynctelnet.TelnetServer):
         def on_environ(self, mapping):
             super().on_environ(mapping)
             _waiter.set_result(mapping)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05)
@@ -102,21 +102,21 @@ async def test_telnet_client_send_var_uservar_environ(event_loop, bind_host,
     given_encoding = 'cp437'
     given_term = 'vt220'
 
-    class ServerTestEnviron(telnetlib3.TelnetServer):
+    class ServerTestEnviron(asynctelnet.TelnetServer):
         def on_environ(self, mapping):
             super().on_environ(mapping)
             _waiter.set_result(mapping)
 
         def on_request_environ(self):
-            from telnetlib3.telopt import VAR, USERVAR
+            from asynctelnet.telopt import VAR, USERVAR
             return [VAR, USERVAR]
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05, connect_maxwait=0.05)
@@ -140,23 +140,23 @@ async def test_telnet_client_send_var_uservar_environ(event_loop, bind_host,
 async def test_telnet_server_reject_environ(event_loop, bind_host,
                                       unused_tcp_port):
     """Test Client's callback method send_environ() for specific requests."""
-    from telnetlib3.telopt import SB, NEW_ENVIRON
+    from asynctelnet.telopt import SB, NEW_ENVIRON
     # given
     given_cols = 19
     given_rows = 84
     given_encoding = 'cp437'
     given_term = 'vt220'
 
-    class ServerTestEnviron(telnetlib3.TelnetServer):
+    class ServerTestEnviron(asynctelnet.TelnetServer):
         def on_request_environ(self):
             return None
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05, connect_maxwait=0.05)

@@ -1,5 +1,5 @@
 accessories
 -----------
 
-.. automodule:: telnetlib3.accessories
+.. automodule:: asynctelnet.accessories
    :members:

@@ -3,9 +3,9 @@
 import asyncio
 
 # local imports
-import telnetlib3
-import telnetlib3.stream_writer
-from telnetlib3.tests.accessories import (
+import asynctelnet
+import asynctelnet.stream_writer
+from asynctelnet.tests.accessories import (
     unused_tcp_port,
     event_loop,
     bind_host
@@ -18,18 +18,18 @@ import pytest
 @pytest.mark.asyncio
 async def test_server_demands_remote_linemode_client_agrees(
         event_loop, bind_host, unused_tcp_port):
-    from telnetlib3.telopt import IAC, DO, WILL, LINEMODE, SB, SE
-    from telnetlib3.slc import (LMODE_MODE, LMODE_MODE_ACK)
+    from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE
+    from asynctelnet.slc import (LMODE_MODE, LMODE_MODE_ACK)
 
     _waiter = asyncio.Future()
 
-    class ServerTestLinemode(telnetlib3.BaseServer):
+    class ServerTestLinemode(asynctelnet.BaseServer):
         def begin_negotiation(self):
             super().begin_negotiation()
             self.writer.iac(DO, LINEMODE)
             self._loop.call_later(0.1, self.connection_lost, None)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestLinemode,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, _waiter_connected=_waiter)
@@ -37,7 +37,7 @@ async def test_server_demands_remote_linemode_client_agrees(
     client_reader, client_writer = await asyncio.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop)
 
-    expect_mode = telnetlib3.stream_writer.TelnetWriter.default_linemode.mask
+    expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE
     expect_stage2 = IAC + SB + LINEMODE + LMODE_MODE + expect_mode + IAC + SE
 
@@ -72,18 +72,18 @@ async def test_server_demands_remote_linemode_client_agrees(
 @pytest.mark.asyncio
 async def test_server_demands_remote_linemode_client_demands_local(
         event_loop, bind_host, unused_tcp_port):
-    from telnetlib3.telopt import IAC, DO, WILL, LINEMODE, SB, SE
-    from telnetlib3.slc import (LMODE_MODE, LMODE_MODE_LOCAL, LMODE_MODE_ACK)
+    from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE
+    from asynctelnet.slc import (LMODE_MODE, LMODE_MODE_LOCAL, LMODE_MODE_ACK)
 
     _waiter = asyncio.Future()
 
-    class ServerTestLinemode(telnetlib3.BaseServer):
+    class ServerTestLinemode(asynctelnet.BaseServer):
         def begin_negotiation(self):
             super().begin_negotiation()
             self.writer.iac(DO, LINEMODE)
             self._loop.call_later(0.1, self.connection_lost, None)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestLinemode,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, _waiter_connected=_waiter)
@@ -91,7 +91,7 @@ async def test_server_demands_remote_linemode_client_demands_local(
     client_reader, client_writer = await asyncio.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop)
 
-    expect_mode = telnetlib3.stream_writer.TelnetWriter.default_linemode.mask
+    expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE
     expect_stage2 = IAC + SB + LINEMODE + LMODE_MODE + expect_mode + IAC + SE
 

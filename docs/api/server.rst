@@ -1,5 +1,5 @@
 server
 ------
 
-.. automodule:: telnetlib3.server
+.. automodule:: asynctelnet.server
    :members:

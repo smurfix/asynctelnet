@@ -1,5 +1,5 @@
 stream_reader
 -------------
 
-.. automodule:: telnetlib3.stream_reader
+.. automodule:: asynctelnet.stream_reader
    :members:

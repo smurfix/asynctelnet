@@ -16,7 +16,7 @@ from docutils.utils import get_source_line
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 HERE = os.path.dirname(__file__)
 sys.path.insert(0, os.path.abspath('sphinxext'))  # for github.py
-github_project_url = "https://github.com/jquast/telnetlib3"
+github_project_url = "https://github.com/smurfix/asynctelnet"
 
 suppress_warnings = ['image.nonlocal_uri']
 
@@ -50,7 +50,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'telnetlib3'
+project = u'asynctelnet'
 copyright = u'2013 Jeff Quast'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -176,7 +176,7 @@ html_show_copyright = True
 # html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'telnetlib3_doc'
+htmlhelp_basename = 'asynctelnet_doc'
 
 
 # -- Options for LaTeX output -------------------------------------------------
@@ -191,7 +191,7 @@ htmlhelp_basename = 'telnetlib3_doc'
 # (source start file, target name, title, author, documentclass
 # [howto/manual]).
 latex_documents = [
-    ('index', 'telnetlib3.tex', u'Telnetlib3 Documentation',
+    ('index', 'asynctelnet.tex', u'Telnetlib3 Documentation',
      u'Jeff Quast', 'manual'),
 ]
 
@@ -224,7 +224,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'telnetlib3', u'Telnetlib3 Documentation', [u'Jeff Quast'], 1)
+    ('index', 'asynctelnet', u'Telnetlib3 Documentation', [u'Jeff Quast'], 1)
 ]
 
 # sort order of API documentation is by their appearance in source code

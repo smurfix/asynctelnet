@@ -10,12 +10,12 @@ We welcome contributions via GitHub pull requests:
 Developing
 ----------
 
-Prepare a developer environment.  Then, from the telnetlib3 code folder::
+Prepare a developer environment.  Then, from the asynctelnet code folder::
 
     pip install --editable .
 
 Any changes made in this project folder are then made available to the python
-interpreter as the 'telnetlib3' module irregardless of the current working
+interpreter as the 'asynctelnet' module irregardless of the current working
 directory.
 
 Running Tests
@@ -40,7 +40,7 @@ Style and Static Analysis
 
 All standards enforced by the underlying tools are adhered to by this project,
 with the declarative exception of those found in `landscape.yml
-<https://github.com/jquast/telnetlib3/blob/master/.landscape.yml>`_, or inline
+<https://github.com/smurfix/asynctelnet/blob/master/.landscape.yml>`_, or inline
 using ``pylint: disable=`` directives.
 
 Perform static analysis using tox target *sa*::

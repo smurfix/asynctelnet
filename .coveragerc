@@ -1,12 +1,12 @@
 [run]
 branch = True
 parallel = True
-source = telnetlib3
+source = asynctelnet
 
 [report]
-omit = telnetlib3/tests/*
+omit = asynctelnet/tests/*
 exclude_lines = pragma: no cover
 precision = 1
 
 [paths]
-source = telnetlib3/
+source = asynctelnet/

@@ -9,7 +9,7 @@ Design
 reduce
 ------
 
-outer telnetlib3-server and telnetlib3-client and examples should connect
+outer asynctelnet-server and asynctelnet-client and examples should connect
 as exit(main(\*\*parse_args(sys.argv))), the _transform_args() function is
 rather shoe-horned, main() should declare keywords.
 
@@ -429,8 +429,8 @@ If anybody can locate these documents, please forward them along.
 .. _NCSA Telnet: https://en.wikipedia.org/wiki/NCSA_Telnet
 .. _SyncTerm: http://syncterm.bbsdev.net/
 .. _`TinTin++`: http://tintin.sourceforge.net/
-.. _examples: https://github.com/jquast/telnetlib3/tree/master/examples
-.. _github: https://github.com/jquast/telnetlib3
+.. _examples: https://github.com/smurfix/asynctelnet/tree/master/examples
+.. _github: https://github.com/smurfix/asynctelnet
 .. _iTerm2: http://www.iterm2.com/
 .. _mtelnet: http://mt32.bbses.info/
 .. _mystic: http://www.mysticbbs.com/about.html
@@ -470,9 +470,9 @@ TODO
 ====
 
 - xon/xoff is unimplemented, see
-  telnetlib3.stream_writer.TelnetWriter.handle_xon and handle_xoff.
+  asynctelnet.stream_writer.TelnetWriter.handle_xon and handle_xoff.
 
-- After long-running (~2mo) job of telnetlib3 server on public IP, we ran
+- After long-running (~2mo) job of asynctelnet server on public IP, we ran
   out of memory ! write test verifying garbage collects!
 
 - TelnetReader has no need for declaring server/client=True, it behaves the
@@ -514,7 +514,7 @@ TODO
    values. only a non-compliant distant end would cause such a condition. so
    it is decided to leave it as "conflict report only, no action always"
 
-- outer telnetlib3-server and telnetlib3-client and examples should connect
+- outer asynctelnet-server and asynctelnet-client and examples should connect
   as exit(main(**parse_args(sys.argv))), the _transform_args() function is
   rather shoe-horned, main() should declare keywords
 

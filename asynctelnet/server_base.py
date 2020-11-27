@@ -31,7 +31,7 @@ class BaseServer(asyncio.streams.FlowControlMixin, asyncio.Protocol):
                  limit=None):
         """Class initializer."""
         super().__init__(loop=loop)
-        self.log = log or logging.getLogger('telnetlib3.server')
+        self.log = log or logging.getLogger('asynctelnet.server')
         self._loop = loop or asyncio.get_event_loop()
         self.default_encoding = encoding
         self._encoding_errors = encoding_errors

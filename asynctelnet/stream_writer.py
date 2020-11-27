@@ -84,7 +84,7 @@ class TelnetWriter(asyncio.StreamWriter):
         :param bool server: Whether the IAC interpreter should react from
             the server point of view.
         :param logging.Logger log: target logger, if None is given, one is
-            created using the namespace ``'telnetlib3.stream_writer'``.
+            created using the namespace ``'asynctelnet.stream_writer'``.
         :param asyncio.AbstractEventLoop loop: set the event loop to
             use.  The return value of :func:`asyncio.get_event_loop` is used
             when unset.

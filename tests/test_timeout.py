@@ -4,9 +4,9 @@ import asyncio
 import time
 
 # local imports
-import telnetlib3
-import telnetlib3.stream_writer
-from telnetlib3.tests.accessories import (
+import asynctelnet
+import asynctelnet.stream_writer
+from asynctelnet.tests.accessories import (
     unused_tcp_port,
     event_loop,
     bind_host
@@ -20,12 +20,12 @@ import pytest
 async def test_telnet_server_default_timeout(
         event_loop, bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
-    from telnetlib3.telopt import IAC, WONT, TTYPE
+    from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
     _waiter = asyncio.Future()
     given_timeout = 19.29
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, timeout=given_timeout)
@@ -47,12 +47,12 @@ async def test_telnet_server_default_timeout(
 async def test_telnet_server_set_timeout(
         event_loop, bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
-    from telnetlib3.telopt import IAC, WONT, TTYPE
+    from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
     _waiter = asyncio.Future()
 
     # exercise,
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         _waiter_connected=_waiter,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop)
@@ -78,11 +78,11 @@ async def test_telnet_server_set_timeout(
 async def test_telnet_server_waitfor_timeout(
         event_loop, bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
-    from telnetlib3.telopt import IAC, DO, WONT, TTYPE
+    from asynctelnet.telopt import IAC, DO, WONT, TTYPE
     # given,
     expected_output = IAC + DO + TTYPE + b'\r\nTimeout.\r\n'
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         host=bind_host, port=unused_tcp_port,
         timeout=0.050, loop=event_loop)
 

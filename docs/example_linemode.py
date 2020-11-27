@@ -8,11 +8,11 @@ import sys
 import pkg_resources
 
 # local
-import telnetlib3
+import asynctelnet
 
 @asyncio.coroutine
 def shell(reader, writer):
-    from telnetlib3 import WONT, ECHO
+    from asynctelnet import WONT, ECHO
     writer.iac(WONT, ECHO)
 
     while True:
@@ -34,11 +34,11 @@ def shell(reader, writer):
         writer.write(''.join(reversed(recv)) + '\r\n')
 
 if __name__ == '__main__':
-    kwargs = telnetlib3.parse_server_args()
+    kwargs = asynctelnet.parse_server_args()
     kwargs['shell'] = shell
-    telnetlib3.run_server(**kwargs)
+    asynctelnet.run_server(**kwargs)
     #sys.argv.append('--shell={
     sys.exit(
         pkg_resources.load_entry_point(
-            'telnetlib3', 'console_scripts', 'telnetlib3-server')()
+            'asynctelnet', 'console_scripts', 'asynctelnet-server')()
     )

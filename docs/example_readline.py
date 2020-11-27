@@ -67,7 +67,7 @@ class Lander(object):
         """
         Lander REPL, provides no process, local echo.
         """
-        from telnetlib3 import WONT, ECHO, SGA
+        from asynctelnet import WONT, ECHO, SGA
         client.writer.iac(WONT, ECHO)
         client.writer.iac(WONT, SGA)
         readline = asyncio.ensure_future(client.reader.readline())

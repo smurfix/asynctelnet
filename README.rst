@@ -1,27 +1,24 @@
-.. image:: https://img.shields.io/travis/jquast/telnetlib3.svg
-    :alt: Travis Continuous Integration
-    :target: https://travis-ci.org/jquast/telnetlib3/
-
-.. image:: https://coveralls.io/repos/jquast/telnetlib3/badge.svg?branch=master&service=github
-    :alt: Coveralls Code Coverage
-    :target: https://coveralls.io/github/jquast/telnetlib3?branch=master
-
-.. image:: https://img.shields.io/pypi/v/telnetlib3.svg
+.. image:: https://img.shields.io/pypi/v/asynctelnet.svg
     :alt: Latest Version
-    :target: https://pypi.python.org/pypi/telnetlib3
+    :target: https://pypi.python.org/pypi/asynctelnet
 
-.. image:: https://img.shields.io/pypi/dm/telnetlib3.svg
+.. image:: https://img.shields.io/pypi/dm/asynctelnet.svg
     :alt: Downloads
-    :target: https://pypi.python.org/pypi/telnetlib3
+    :target: https://pypi.python.org/pypi/asynctelnet
 
 
 Introduction
 ============
 
-telnetlib3 is a Telnet Client and Server library for python.  This project
-requires python 3.3 and later, using the asyncio_ module.
+asynctelnet is a Telnet Client and Server library for python.  This project
+requires python 3.6 and later, using the anyio_ module.
 
-.. _asyncio: http://docs.python.org/3.4/library/asyncio.html
+.. _anyio: https://anyio.readthedocs.io/
+
+asynctelnet is an anyio-ization of the telnetlib3_ module.
+
+.. _telnetlib3: https://telnetlib3.readthedocs.io/
+
 
 Quick Example
 -------------
@@ -30,68 +27,69 @@ Authoring a Telnet Server using Streams interface that offers a basic war game:
 
 .. code-block:: python
 
-    import asyncio, telnetlib3
+    import anyio, asynctelnet
 
-    @asyncio.coroutine
-    def shell(reader, writer):
-        writer.write('\r\nWould you like to play a game? ')
-        inp = yield from reader.read(1)
+    async def shell(stream):
+        stream = asynctelnet.Stream(stream, server=True)
+        # TODO setup telnet options here
+
+        await stream.send('\r\nWould you like to play a game? ')
+        inp = await reader.receive(1)
         if inp:
-            writer.echo(inp)
-            writer.write('\r\nThey say the only way to win '
-                         'is to not play at all.\r\n')
-            yield from writer.drain()
-        writer.close()
+            await stream.echo(inp)
+            await stream.send('\r\nThey say the only way to win '
+                              'is to not play at all.\r\n')
 
-    loop = asyncio.get_event_loop()
-    coro = telnetlib3.create_server(port=6023, shell=shell)
-    server = loop.run_until_complete(coro)
-    loop.run_until_complete(server.wait_closed())
+    async def main():
+        listener = await anyio.create_tcp_listener(local_port=6023)
+        await listener.serve(shell)
+    anyio.run(main)
 
 Authoring a Telnet Client that plays the war game with this server:
 
 .. code-block:: python
 
-    import asyncio, telnetlib3
+    import anyio, asynctelnet
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(stream):
+        stream = asynctelnet.Stream(stream, client=True)
         while True:
             # read stream until '?' mark is found
-            outp = yield from reader.read(1024)
+            outp = await stream.receive(1024)
             if not outp:
                 # End of File
                 break
             elif '?' in outp:
                 # reply all questions with 'y'.
-                writer.write('y')
- 
+                await stream.send('y')
+     
             # display all server output
             print(outp, flush=True)
- 
+     
         # EOF
         print()
+    
+    async def main():
+        async with await connect_tcp('localhost', 6023) as client:
+            await shell(client)
+    anyio.run(main)
 
-    loop = asyncio.get_event_loop()
-    coro = telnetlib3.open_connection('localhost', 6023, shell=shell)
-    reader, writer = loop.run_until_complete(coro)
-    loop.run_until_complete(writer.protocol.waiter_closed)
 
 Command-line
 ------------
 
 Two command-line scripts are distributed with this package.
 
-``telnetlib3-client``
+``asynctelnet-client``
 
   Small terminal telnet client.  Some example destinations and options::
 
-    telnetlib3-client nethack.alt.org
-    telnetlib3-client --encoding=cp437 --force-binary blackflag.acid.org
-    telnetlib3-client htc.zapto.org
+    asynctelnet-client nethack.alt.org
+    asynctelnet-client --encoding=cp437 --force-binary blackflag.acid.org
+    asynctelnet-client htc.zapto.org
 
 
-``telnetlib3-server``
+``asynctelnet-server``
 
   Telnet server providing the default debugging shell.  This provides a simple
   shell server that allows introspection of the session's values, for example::
@@ -176,4 +174,4 @@ The following RFC specifications are implemented:
 Further Reading
 ---------------
 
-Further documentation available at https://telnetlib3.readthedocs.org/
+Further documentation available at https://asynctelnet.readthedocs.org/

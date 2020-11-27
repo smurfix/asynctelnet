@@ -5,8 +5,8 @@ import pexpect
 import struct
 
 # local imports
-import telnetlib3
-from telnetlib3.tests.accessories import (
+import asynctelnet
+from asynctelnet.tests.accessories import (
     unused_tcp_port,
     event_loop,
     bind_host
@@ -21,16 +21,16 @@ async def test_telnet_server_on_naws(
         event_loop, bind_host, unused_tcp_port):
     """Test Server's Negotiate about window size (NAWS)."""
     # given
-    from telnetlib3.telopt import IAC, WILL, SB, SE, NAWS
+    from asynctelnet.telopt import IAC, WILL, SB, SE, NAWS
     _waiter = asyncio.Future()
     given_cols, given_rows = 40, 20
 
-    class ServerTestNaws(telnetlib3.TelnetServer):
+    class ServerTestNaws(asynctelnet.TelnetServer):
         def on_naws(self, width, height):
             super().on_naws(width, height)
             _waiter.set_result(self)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, connect_maxwait=0.05)
@@ -56,17 +56,17 @@ async def test_telnet_client_send_naws(event_loop, bind_host, unused_tcp_port):
     _waiter = asyncio.Future()
     given_cols, given_rows = 40, 20
 
-    class ServerTestNaws(telnetlib3.TelnetServer):
+    class ServerTestNaws(asynctelnet.TelnetServer):
         def on_naws(self, width, height):
             super().on_naws(width, height)
             _waiter.set_result((height, width))
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, connect_maxwait=0.05)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         cols=given_cols, rows=given_rows, connect_minwait=0.05)
 
@@ -82,18 +82,18 @@ async def test_telnet_client_send_tty_naws(event_loop, bind_host,
     # given a client,
     _waiter = asyncio.Future()
     given_cols, given_rows = 40, 20
-    prog, args = 'telnetlib3-client', [
+    prog, args = 'asynctelnet-client', [
         bind_host, str(unused_tcp_port), '--loglevel=warning',
         '--connect-minwait=0.005', '--connect-maxwait=0.010']
 
     # a server,
-    class ServerTestNaws(telnetlib3.TelnetServer):
+    class ServerTestNaws(asynctelnet.TelnetServer):
         def on_naws(self, width, height):
             super().on_naws(width, height)
             _waiter.set_result((height, width))
             event_loop.call_soon(self.connection_lost, None)
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, connect_maxwait=0.05)
@@ -115,17 +115,17 @@ async def test_telnet_client_send_naws_65534(event_loop, bind_host, unused_tcp_p
     given_cols, given_rows = 9999999, -999999
     expect_cols, expect_rows = 65535, 0
 
-    class ServerTestNaws(telnetlib3.TelnetServer):
+    class ServerTestNaws(asynctelnet.TelnetServer):
         def on_naws(self, width, height):
             super().on_naws(width, height)
             _waiter.set_result((height, width))
 
-    await telnetlib3.create_server(
+    await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
         loop=event_loop, connect_maxwait=0.05)
 
-    reader, writer = await telnetlib3.open_connection(
+    reader, writer = await asynctelnet.open_connection(
         host=bind_host, port=unused_tcp_port, loop=event_loop,
         cols=given_cols, rows=given_rows, connect_minwait=0.05)
 

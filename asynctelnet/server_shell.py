@@ -11,7 +11,7 @@ __all__ = ('telnet_server_shell',)
 @asyncio.coroutine
 def telnet_server_shell(reader, writer):
     """
-    A default telnet shell, appropriate for use with telnetlib3.create_server.
+    A default telnet shell, appropriate for use with asynctelnet.create_server.
 
     This shell provides a very simple REPL, allowing introspection and state
     toggling of the connected client session.

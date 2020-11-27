@@ -1,4 +1,4 @@
-from telnetlib3.accessories import (
+from asynctelnet.accessories import (
     encoding_from_lang,
     name_unicode,
     eightbits,
