@@ -29,16 +29,16 @@ Authoring a Telnet Server using Streams interface that offers a basic war game:
 
     import anyio, asynctelnet
 
-    async def shell(stream):
-        stream = asynctelnet.Stream(stream, server=True)
-        # TODO setup telnet options here
+    async def shell(tcp):
+        async with asynctelnet.Stream(tcp, server=True) as stream:
+            # TODO setup telnet options here
 
-        await stream.send('\r\nWould you like to play a game? ')
-        inp = await reader.receive(1)
-        if inp:
-            await stream.echo(inp)
-            await stream.send('\r\nThey say the only way to win '
-                              'is to not play at all.\r\n')
+            await stream.send('\r\nWould you like to play a game? ')
+            inp = await reader.receive(1)
+            if inp:
+                await stream.echo(inp)
+                await stream.send('\r\nThey say the only way to win '
+                                  'is to not play at all.\r\n')
 
     async def main():
         listener = await anyio.create_tcp_listener(local_port=6023)
@@ -51,20 +51,20 @@ Authoring a Telnet Client that plays the war game with this server:
 
     import anyio, asynctelnet
 
-    async def shell(stream):
-        stream = asynctelnet.Stream(stream, client=True)
-        while True:
-            # read stream until '?' mark is found
-            outp = await stream.receive(1024)
-            if not outp:
-                # End of File
-                break
-            elif '?' in outp:
-                # reply all questions with 'y'.
-                await stream.send('y')
-     
-            # display all server output
-            print(outp, flush=True)
+    async def shell(tcp):
+        async with asynctelnet.Stream(tcp, client=True) as stream:
+            while True:
+                # read stream until '?' mark is found
+                outp = await stream.receive(1024)
+                if not outp:
+                    # End of File
+                    break
+                elif '?' in outp:
+                    # reply all questions with 'y'.
+                    await stream.send('y')
+    
+                # display all server output
+                print(outp, flush=True)
      
         # EOF
         print()
