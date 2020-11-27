@@ -577,14 +577,13 @@ async def test_telnet_client_cmdline_stdin_pipe(bind_host, unused_tcp_port):
             '--connect-minwait=0.15', '--connect-maxwait=0.15',
             '--logfile={0}'.format(logfile)]
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.write('Press Return to continue:')
-        inp = yield from reader.readline()
+        inp = await reader.readline()
         if inp:
             writer.echo(inp)
             writer.write('\ngoodbye.\n')
-        yield from writer.drain()
+        await writer.drain()
         writer.close()
 
     # start server

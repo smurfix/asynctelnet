@@ -118,8 +118,7 @@ async def test_iac_do_twice_replies_once(bind_host, unused_tcp_port):
     """WILL/WONT replied only once for repeated DO."""
     from asynctelnet.telopt import IAC, DO, WILL, ECHO
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.close()
 
     # given,
@@ -147,8 +146,7 @@ async def test_iac_dont_dont(bind_host, unused_tcp_port):
     """WILL/WONT replied only once for repeated DO."""
     from asynctelnet.telopt import IAC, DONT, ECHO
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.close()
 
     # given,
@@ -216,10 +214,9 @@ async def test_slc_simul(bind_host, unused_tcp_port):
     expected_from_server = IAC + WILL + ECHO + IAC + WILL + SGA
     _waiter_input = asyncio.Future()
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         # read everything from client until they hang up.
-        result = yield from reader.read()
+        result = await reader.read()
 
         # then report what was received and hangup on client
         _waiter_input.set_result((writer.protocol.waiters, result))
@@ -294,8 +291,7 @@ async def test_writelines_bytes(bind_host, unused_tcp_port):
     given = (b'a', b'b', b'c', b'd')
     expected = b'abcd'
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.writelines(given)
         writer.close()
 
@@ -319,8 +315,7 @@ async def test_writelines_unicode(bind_host, unused_tcp_port):
     given = ('a', 'b', 'c', 'd')
     expected = b'abcd'
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.writelines(given)
         writer.close()
 
@@ -354,8 +349,7 @@ async def test_send_ga(bind_host, unused_tcp_port):
     from asynctelnet.telopt import IAC, GA
     expected = IAC + GA
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         result = writer.send_ga()
         assert result is True
         writer.close()
@@ -383,8 +377,7 @@ async def test_not_send_ga(bind_host, unused_tcp_port):
     # (not sent).  The reader never receives an IAC + GA.
     expected = IAC + WILL + SGA
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         result = writer.send_ga()
         assert result is False
         writer.close()
@@ -408,8 +401,7 @@ async def test_not_send_eor(bind_host, unused_tcp_port):
     """Writer does not send IAC + EOR when un-negotiated."""
     expected = b''
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         result = writer.send_eor()
         assert result is False
         writer.close()
@@ -438,8 +430,7 @@ async def test_send_eor(bind_host, unused_tcp_port):
     assert EOR == bytes([25])
     assert CMD_EOR == bytes([239])
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         writer.write('<')
         result = writer.send_eor()
         assert result is True

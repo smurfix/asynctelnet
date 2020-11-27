@@ -216,17 +216,16 @@ async def test_telnet_server_binary_mode(
     # given
     _waiter = asyncio.Future()
 
-    @asyncio.coroutine
-    def binary_shell(reader, writer):
+    async def binary_shell(reader, writer):
         # our reader and writer should provide binary output
         writer.write(b'server_output')
 
-        val = yield from reader.readexactly(1)
+        val = await reader.readexactly(1)
         assert val == b'c'
-        val = yield from reader.readexactly(len(b'lient '))
+        val = await reader.readexactly(len(b'lient '))
         assert val == b'lient '
         writer.close()
-        val = yield from reader.read()
+        val = await reader.read()
         assert val == b'output'
 
     await asynctelnet.create_server(

@@ -10,15 +10,14 @@ import pkg_resources
 # local
 import asynctelnet
 
-@asyncio.coroutine
-def shell(reader, writer):
+async def shell(reader, writer):
     from asynctelnet import WONT, ECHO
     writer.iac(WONT, ECHO)
 
     while True:
         writer.write('> ')
 
-        recv = yield from reader.readline()
+        recv = await reader.readline()
 
         # eof
         if not recv:
@@ -28,7 +27,7 @@ def shell(reader, writer):
 
         if recv.rstrip() == 'bye':
             writer.write('goodbye.\r\n')
-            yield from writer.drain()
+            await writer.drain()
             writer.close()
 
         writer.write(''.join(reversed(recv)) + '\r\n')

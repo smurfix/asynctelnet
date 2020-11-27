@@ -367,8 +367,7 @@ class TelnetServer(server_base.BaseServer):
         return self.writer.outbinary and self.writer.inbinary
 
 
-@asyncio.coroutine
-def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
+async def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
     """
     Create a TCP Telnet server.
 
@@ -380,7 +379,7 @@ def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
     :param server_base.BaseServer protocol_factory: An alternate protocol
         factory for the server, when unspecified, :class:`TelnetServer` is
         used.
-    :param Callable shell: A :func:`asyncio.coroutine` that is called after
+    :param Callable shell: A coroutine that is called after
         negotiation completes, receiving arguments ``(reader, writer)``.
         The reader is a :class:`~.TelnetReader` instance, the writer is
         a :class:`~.TelnetWriter` instance.
@@ -421,17 +420,15 @@ def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
         :meth:`asyncio.loop.create_server`, An object which can be used
         to stop the service.
 
-    This function is a :func:`~asyncio.coroutine`.
     """
     protocol_factory = protocol_factory or TelnetServer
     loop = kwds.get('loop', asyncio.get_event_loop())
 
-    return (yield from loop.create_server(
+    return (await loop.create_server(
         lambda: protocol_factory(**kwds), host, port))
 
 
-@asyncio.coroutine
-def _sigterm_handler(server, log):
+async def _sigterm_handler(server, log):
     log.info('SIGTERM received, closing server.')
 
     # This signals the completion of the server.wait_closed() Future,

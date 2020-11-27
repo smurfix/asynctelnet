@@ -228,15 +228,14 @@ class TelnetTerminalClient(TelnetClient):
                     int(os.environ.get('COLUMNS', 80)))
 
 
-@asyncio.coroutine
-def open_connection(host=None, port=23, *, client_factory=None,
-                    family=0, flags=0, local_addr=None, log=None,
-                    encoding='utf8', encoding_errors='replace',
-                    force_binary=False, term='unknown', cols=80, rows=25,
-                    tspeed=(38400, 38400), xdisploc='', shell=None,
-                    connect_minwait=2.0, connect_maxwait=3.0,
-                    waiter_closed=None, _waiter_connected=None,
-                    limit=None):
+async def open_connection(host=None, port=23, *, client_factory=None,
+                         family=0, flags=0, local_addr=None, log=None,
+                         encoding='utf8', encoding_errors='replace',
+                         force_binary=False, term='unknown', cols=80, rows=25,
+                         tspeed=(38400, 38400), xdisploc='', shell=None,
+                         connect_minwait=2.0, connect_maxwait=3.0,
+                         waiter_closed=None, _waiter_connected=None,
+                         limit=None):
     """
     Connect to a TCP Telnet server as a Telnet client.
 
@@ -274,7 +273,7 @@ def open_connection(host=None, port=23, *, client_factory=None,
         :rfc:`1079`.
     :param str xdisploc: String transmitted in response for request of
         XDISPLOC, :rfc:`1086` by server (X11).
-    :param Callable shell: A :func:`asyncio.coroutine` that is called after
+    :param Callable shell: A coroutine that is called after
         negotiation completes, receiving arguments ``(reader, writer)``.
         The reader is a :class:`~.TelnetReader` instance, the writer is
         a :class:`~.TelnetWriter` instance.
@@ -304,7 +303,6 @@ def open_connection(host=None, port=23, *, client_factory=None,
     :return (reader, writer): The reader is a :class:`~.TelnetReader`
         instance, the writer is a :class:`~.TelnetWriter` instance.
 
-    This function is a :func:`~asyncio.coroutine`.
     """
     log = log or logging.getLogger(__name__)
 
@@ -322,11 +320,11 @@ def open_connection(host=None, port=23, *, client_factory=None,
             waiter_closed=waiter_closed, _waiter_connected=_waiter_connected,
             limit=limit)
 
-    transport, protocol = yield from loop.create_connection(
+    transport, protocol = await loop.create_connection(
         connection_factory, host, port,
         family=family, flags=flags, local_addr=local_addr)
 
-    yield from protocol._waiter_connected
+    await protocol._waiter_connected
 
     return protocol.reader, protocol.writer
 

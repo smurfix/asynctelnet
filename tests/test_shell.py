@@ -28,15 +28,14 @@ async def test_telnet_server_shell_as_coroutine(bind_host,
     expect_hello = IAC + DO + TTYPE
     hello_reply = IAC + WONT + TTYPE
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         _waiter.set_result(True)
-        inp = yield from reader.readexactly(len(send_input))
+        inp = await reader.readexactly(len(send_input))
         assert inp == send_input
         writer.write(expect_output)
         _saved.add(writer)
         _saved.add(writer._protocol)
-        yield from writer.drain()
+        await writer.drain()
         writer.close()
 
     # exercise,
@@ -77,8 +76,7 @@ async def test_telnet_client_shell_as_coroutine(bind_host,
     """Test callback shell(reader, writer) as coroutine of create_server()."""
     _waiter = asyncio.Future()
 
-    @asyncio.coroutine
-    def shell(reader, writer):
+    async def shell(reader, writer):
         _waiter.set_result(True)
 
     # a server that doesn't care
