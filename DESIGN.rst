@@ -1,7 +1,9 @@
 Project Status
 ==============
 
-Retired by author, looking for new owner :)
+Forked by Matthias Urlichs, for anyio-ization.
+
+This text has not yet been updated.
 
 Design
 ======
