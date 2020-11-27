@@ -14,7 +14,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_on_environ(
         bind_host, unused_tcp_port):
     """Test Server's callback method on_environ()."""
@@ -54,7 +54,7 @@ async def test_telnet_server_on_environ(
         u''.join(chr(n) for n in range(0, 128)))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_send_environ(bind_host,
                                     unused_tcp_port):
     """Test Client's callback method send_environ() for specific requests."""
@@ -88,7 +88,7 @@ async def test_telnet_client_send_environ(bind_host,
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_send_var_uservar_environ(bind_host,
                                                 unused_tcp_port):
     """Test Client's callback method send_environ() for VAR/USERVAR request."""
@@ -132,7 +132,7 @@ async def test_telnet_client_send_var_uservar_environ(bind_host,
         assert writer.get_extra_info(key) == val
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_reject_environ(bind_host,
                                       unused_tcp_port):
     """Test Client's callback method send_environ() for specific requests."""

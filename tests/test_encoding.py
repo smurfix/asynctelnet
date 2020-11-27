@@ -14,7 +14,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_encoding_default(
         bind_host, unused_tcp_port):
     """Default encoding US-ASCII unless it can be negotiated/confirmed!"""
@@ -43,7 +43,7 @@ async def test_telnet_server_encoding_default(
         srv_instance.encoding()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_encoding_default(
         bind_host, unused_tcp_port):
     """Default encoding US-ASCII unless it can be negotiated/confirmed!"""
@@ -68,7 +68,7 @@ async def test_telnet_client_encoding_default(
         writer.protocol.encoding()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_encoding_client_will(
         bind_host, unused_tcp_port):
     """Server Default encoding (utf8) incoming when client WILL."""
@@ -94,7 +94,7 @@ async def test_telnet_server_encoding_client_will(
     assert srv_instance.encoding(incoming=True, outgoing=True) == 'US-ASCII'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_encoding_server_do(
         bind_host, unused_tcp_port):
     """Server's default encoding."""
@@ -120,7 +120,7 @@ async def test_telnet_server_encoding_server_do(
     assert srv_instance.encoding(incoming=True, outgoing=True) == 'US-ASCII'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_encoding_bidirectional(
         bind_host, unused_tcp_port):
     """Server's default encoding with bi-directional BINARY negotiation."""
@@ -148,7 +148,7 @@ async def test_telnet_server_encoding_bidirectional(
     assert srv_instance.encoding(incoming=True, outgoing=True) == 'utf8'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_and_server_encoding_bidirectional(
         bind_host, unused_tcp_port):
     """Given a default encoding for client and server, client always wins!"""
@@ -173,7 +173,7 @@ async def test_telnet_client_and_server_encoding_bidirectional(
     assert writer.protocol.encoding(incoming=True, outgoing=True) == 'cp437'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_encoding_by_LANG(
         bind_host, unused_tcp_port):
     """Server's encoding negotiated by LANG value."""
@@ -208,7 +208,7 @@ async def test_telnet_server_encoding_by_LANG(
     assert srv_instance.get_extra_info('LANG') == 'uk_UA.KOI8-U'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_binary_mode(
         bind_host, unused_tcp_port):
     """Server's encoding=False creates a binary reader/writer interface."""
@@ -249,7 +249,7 @@ async def test_telnet_server_binary_mode(
     assert eof == b''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_and_server_escape_iac_encoding(
         bind_host, unused_tcp_port):
     """Ensure that IAC (byte 255) may be sent across the wire by encoding."""
@@ -275,7 +275,7 @@ async def test_telnet_client_and_server_escape_iac_encoding(
     assert eof == ''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_and_server_escape_iac_binary(
         bind_host, unused_tcp_port):
     """Ensure that IAC (byte 255) may be sent across the wire in binary."""

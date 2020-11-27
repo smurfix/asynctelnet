@@ -14,7 +14,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_demands_remote_linemode_client_agrees(
         bind_host, unused_tcp_port):
     from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE
@@ -68,7 +68,7 @@ async def test_server_demands_remote_linemode_client_agrees(
     assert srv_instance.writer.remote_option.enabled(LINEMODE)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_demands_remote_linemode_client_demands_local(
         bind_host, unused_tcp_port):
     from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE

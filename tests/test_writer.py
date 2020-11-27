@@ -113,7 +113,7 @@ def test_sb_interrupted():
         writer.feed_byte(SE)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_iac_do_twice_replies_once(bind_host, unused_tcp_port):
     """WILL/WONT replied only once for repeated DO."""
     from asynctelnet.telopt import IAC, DO, WILL, ECHO
@@ -141,7 +141,7 @@ async def test_iac_do_twice_replies_once(bind_host, unused_tcp_port):
     assert result_from_server == expect_from_server
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_iac_dont_dont(bind_host, unused_tcp_port):
     """WILL/WONT replied only once for repeated DO."""
     from asynctelnet.telopt import IAC, DONT, ECHO
@@ -170,7 +170,7 @@ async def test_iac_dont_dont(bind_host, unused_tcp_port):
 
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_iac_dont_dont(bind_host, unused_tcp_port):
     """Try a DONT and ensure it cannot be sent twice."""
     from asynctelnet.telopt import DONT, ECHO
@@ -199,7 +199,7 @@ async def test_send_iac_dont_dont(bind_host, unused_tcp_port):
     assert server_writer.local_option[ECHO] is False
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_slc_simul(bind_host, unused_tcp_port):
     """Test SLC control characters are simulated in kludge mode."""
     # For example, ^C is simulated as IP (Interrupt Process) callback.
@@ -263,7 +263,7 @@ async def test_slc_simul(bind_host, unused_tcp_port):
     assert data_received == given_input_inband
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unhandled_do_sends_wont(bind_host, unused_tcp_port):
     """An unhandled DO is denied by WONT."""
     from asynctelnet.telopt import IAC, DO, NOP, WONT
@@ -285,7 +285,7 @@ async def test_unhandled_do_sends_wont(bind_host, unused_tcp_port):
     assert result == expected_output
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_writelines_bytes(bind_host, unused_tcp_port):
     """Exercise bytes-only interface of writer.writelines() function."""
     given = (b'a', b'b', b'c', b'd')
@@ -309,7 +309,7 @@ async def test_writelines_bytes(bind_host, unused_tcp_port):
     assert result == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_writelines_unicode(bind_host, unused_tcp_port):
     """Exercise unicode interface of writer.writelines() function."""
     given = ('a', 'b', 'c', 'd')
@@ -343,7 +343,7 @@ def test_bad_iac():
         writer.iac(NOP)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_ga(bind_host, unused_tcp_port):
     """Writer sends IAC + GA when SGA is not negotiated."""
     from asynctelnet.telopt import IAC, GA
@@ -367,7 +367,7 @@ async def test_send_ga(bind_host, unused_tcp_port):
     assert result == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_send_ga(bind_host, unused_tcp_port):
     """Writer does not send IAC + GA when SGA is negotiated."""
     from asynctelnet.telopt import IAC, DO, WILL, SGA
@@ -396,7 +396,7 @@ async def test_not_send_ga(bind_host, unused_tcp_port):
     assert result == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_not_send_eor(bind_host, unused_tcp_port):
     """Writer does not send IAC + EOR when un-negotiated."""
     expected = b''
@@ -419,7 +419,7 @@ async def test_not_send_eor(bind_host, unused_tcp_port):
     assert result == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_eor(bind_host, unused_tcp_port):
     """Writer sends IAC + EOR if client requests by DO."""
     from asynctelnet.telopt import IAC, DO, WILL, CMD_EOR, EOR

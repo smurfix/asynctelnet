@@ -19,7 +19,7 @@ import pytest
 import pexpect
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_server(bind_host, unused_tcp_port):
     """Test asynctelnet.create_server basic instantiation."""
     # exercise,
@@ -29,7 +29,7 @@ async def test_create_server(bind_host, unused_tcp_port):
 # disabled by jquast Sun Feb 17 13:44:15 PST 2019,
 # we need to await completion of full negotiation, travis-ci
 # is failing with additional, 'failed-reply:DO BINARY'
-#@pytest.mark.asyncio
+#@pytest.mark.anyio
 #async def test_open_connection(bind_host, unused_tcp_port):
 #    """Exercise asynctelnet.open_connection with default options."""
 #    _waiter = asyncio.Future()
@@ -49,7 +49,7 @@ async def test_create_server(bind_host, unused_tcp_port):
 #        'server-will:BINARY,ECHO,SGA>')
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_server_conditionals(
         bind_host, unused_tcp_port):
     """Test asynctelnet.create_server conditionals."""
@@ -59,7 +59,7 @@ async def test_create_server_conditionals(
         host=bind_host, port=unused_tcp_port)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_server_on_connect(bind_host, unused_tcp_port):
     """Test on_connect() anonymous function callback of create_server."""
     # given,
@@ -75,7 +75,7 @@ async def test_create_server_on_connect(bind_host, unused_tcp_port):
     assert given_pf.called
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_open_close(
         bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetServer() instantiation and connection_made()."""
@@ -98,7 +98,7 @@ async def test_telnet_server_open_close(
     assert result == b'\xff\xfd\x18Goodbye!'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_open_close_by_write(
         bind_host, unused_tcp_port):
     """Exercise BaseClient.connection_lost() on writer closed."""
@@ -112,7 +112,7 @@ async def test_telnet_client_open_close_by_write(
     assert (await reader.read()) == ''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_open_closed_by_peer(
         bind_host, unused_tcp_port):
     """Exercise BaseClient.connection_lost()."""
@@ -133,7 +133,7 @@ async def test_telnet_client_open_closed_by_peer(
     assert data_received == ''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_advanced_negotiation(
         bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetServer() advanced negotiation."""
@@ -176,7 +176,7 @@ async def test_telnet_server_advanced_negotiation(
     }
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_closed_by_client(
         bind_host, unused_tcp_port):
     """Exercise TelnetServer.connection_lost."""
@@ -203,7 +203,7 @@ async def test_telnet_server_closed_by_client(
     srv_instance.connection_lost(exc=None)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_eof_by_client(
         bind_host, unused_tcp_port):
     """Exercise TelnetServer.eof_received()."""
@@ -225,7 +225,7 @@ async def test_telnet_server_eof_by_client(
     assert srv_instance._closing
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_closed_by_server(
         bind_host, unused_tcp_port):
     """Exercise TelnetServer.connection_lost by close()."""
@@ -264,7 +264,7 @@ async def test_telnet_server_closed_by_server(
     await asyncio.wait_for(_waiter_closed, 0.5)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_idle_duration(
         bind_host, unused_tcp_port):
     """Exercise TelnetServer.idle property."""
@@ -290,7 +290,7 @@ async def test_telnet_server_idle_duration(
     assert 0 <= server.duration <= 0.5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_idle_duration_minwait(
         bind_host, unused_tcp_port):
     """Exercise TelnetClient.idle property and minimum connection time."""
@@ -316,7 +316,7 @@ async def test_telnet_client_idle_duration_minwait(
     assert 0 <= writer.protocol.duration <= 0.5
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_closed_by_error(
         bind_host, unused_tcp_port):
     """Exercise TelnetServer.connection_lost by exception."""
@@ -349,7 +349,7 @@ async def test_telnet_server_closed_by_error(
         await server.reader.read()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_open_close_by_error(
         bind_host, unused_tcp_port):
     """Exercise BaseClient.connection_lost() on error."""
@@ -367,7 +367,7 @@ async def test_telnet_client_open_close_by_error(
         await reader.read()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_negotiation_fail(
         bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetServer() negotiation failure with client."""
@@ -397,7 +397,7 @@ async def test_telnet_server_negotiation_fail(
                                    'mode:local +lineflow -xon_any +slc_sim '
                                    'failed-reply:DO TTYPE>')
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_negotiation_fail(
         bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetCLient() negotiation failure with server."""
@@ -428,7 +428,7 @@ async def test_telnet_client_negotiation_fail(
     assert expected_ms <= elapsed_ms <= expected_ms + 50
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_as_module():
     """Test __main__ hook, when executing python -m asynctelnet.server --help"""
     prog = sys.executable
@@ -444,7 +444,7 @@ async def test_telnet_server_as_module():
     await proc.wait()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_cmdline(bind_host, unused_tcp_port):
     """Test executing asynctelnet/server.py as server"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
@@ -486,7 +486,7 @@ async def test_telnet_server_cmdline(bind_host, unused_tcp_port):
     await proc.wait()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_as_module():
     """Test __main__ hook, when executing python -m asynctelnet.client --help"""
     prog = sys.executable
@@ -502,7 +502,7 @@ async def test_telnet_client_as_module():
     await proc.wait()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_cmdline(bind_host, unused_tcp_port):
     """Test executing asynctelnet/client.py as client"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
@@ -538,7 +538,7 @@ async def test_telnet_client_cmdline(bind_host, unused_tcp_port):
     assert out == b'\x1b[m\nConnection closed by foreign host.\n'
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_tty_cmdline(bind_host, unused_tcp_port):
     """Test executing asynctelnet/client.py as client using a tty (pexpect)"""
     # this code may be reduced when pexpect asyncio is bugfixed ..
@@ -564,7 +564,7 @@ async def test_telnet_client_tty_cmdline(bind_host, unused_tcp_port):
                            b"\x1b[m\r\n"
                            b"Connection closed by foreign host.\r\n")
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_cmdline_stdin_pipe(bind_host, unused_tcp_port):
     """Test sending data through command-line client (by os PIPE)."""
     # this code may be reduced when pexpect asyncio is bugfixed ..

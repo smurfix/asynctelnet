@@ -15,7 +15,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_default_timeout(
         bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
@@ -42,7 +42,7 @@ async def test_telnet_server_default_timeout(
     assert server.get_extra_info('timeout') == given_timeout
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_set_timeout(
         bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
@@ -72,7 +72,7 @@ async def test_telnet_server_set_timeout(
     assert server.get_extra_info('timeout') == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_waitfor_timeout(
         bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""

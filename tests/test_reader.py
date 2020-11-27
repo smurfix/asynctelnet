@@ -37,7 +37,7 @@ def test_reader_instantiation_safety():
     assert result == "<TelnetReaderUnicode encoding='def-ENC' limit=1999 buflen=0 eof=False>"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_using_readline_unicode(
         bind_host, unused_tcp_port):
     """Ensure strict RFC interpretation of newlines in readline method."""
@@ -82,7 +82,7 @@ async def test_telnet_reader_using_readline_unicode(
     assert eof == ''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_using_readline_bytes(
         bind_host, unused_tcp_port):
     """Ensure strict RFC interpretation of newlines in readline method."""
@@ -127,7 +127,7 @@ async def test_telnet_reader_using_readline_bytes(
     assert eof == b''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_read_exactly_unicode(
         bind_host, unused_tcp_port):
     """Ensure TelnetReader.readexactly, especially IncompleteReadError."""
@@ -166,7 +166,7 @@ async def test_telnet_reader_read_exactly_unicode(
     assert exc_info.value.expected == given_readsize
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_read_exactly_bytes(
         bind_host, unused_tcp_port):
     """Ensure TelnetReader.readexactly, especially IncompleteReadError."""
@@ -204,7 +204,7 @@ async def test_telnet_reader_read_exactly_bytes(
     assert exc_info.value.expected == given_readsize
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_read_0(
         bind_host, unused_tcp_port):
     """Ensure TelnetReader.read(0) returns nothing."""
@@ -219,7 +219,7 @@ async def test_telnet_reader_read_0(
     # verify
     assert value == ''
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_read_beyond_limit_unicode(
         bind_host, unused_tcp_port):
     """Ensure ability to read(-1) beyond segment sizes of reader._limit."""
@@ -247,7 +247,7 @@ async def test_telnet_reader_read_beyond_limit_unicode(
     assert value == 'x' * (limit + 1)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_reader_read_beyond_limit_bytes(
         bind_host, unused_tcp_port):
     """Ensure ability to read(-1) beyond segment sizes of reader._limit."""

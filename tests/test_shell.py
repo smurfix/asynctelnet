@@ -15,7 +15,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_shell_as_coroutine(bind_host,
                                           unused_tcp_port):
     """Test callback shell(reader, writer) as coroutine of create_server()."""
@@ -70,7 +70,7 @@ async def test_telnet_server_shell_as_coroutine(bind_host,
     assert len(_saved) == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_shell_as_coroutine(bind_host,
                                           unused_tcp_port):
     """Test callback shell(reader, writer) as coroutine of create_server()."""
@@ -90,7 +90,7 @@ async def test_telnet_client_shell_as_coroutine(bind_host,
     await asyncio.wait_for(_waiter, 0.5)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_shell_make_coro_by_function(bind_host,
                                                    unused_tcp_port):
     """Test callback shell(reader, writer) as function, for create_server()."""
@@ -116,7 +116,7 @@ async def test_telnet_server_shell_make_coro_by_function(bind_host,
     await asyncio.wait_for(_waiter, 0.5)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_no_shell(bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetServer() instantiation and connection_made()."""
     from asynctelnet.telopt import IAC, DO, WONT, TTYPE
@@ -141,7 +141,7 @@ async def test_telnet_server_no_shell(bind_host, unused_tcp_port):
     assert client_recv == client_expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_given_shell(
         bind_host, unused_tcp_port):
     """Iterate all state-reading commands of default telnet_server_shell."""
@@ -282,7 +282,7 @@ async def test_telnet_server_given_shell(
     assert result == b''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_shell_eof(bind_host, unused_tcp_port):
     """Test EOF in telnet_server_shell()."""
     from asynctelnet.telopt import IAC, WONT, TTYPE

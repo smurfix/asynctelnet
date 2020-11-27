@@ -15,7 +15,7 @@ from asynctelnet.tests.accessories import (
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_server_on_naws(
         bind_host, unused_tcp_port):
     """Test Server's Negotiate about window size (NAWS)."""
@@ -48,7 +48,7 @@ async def test_telnet_server_on_naws(
     assert srv_instance.get_extra_info('rows') == given_rows
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_send_naws(bind_host, unused_tcp_port):
     """Test Client's NAWS of callback method send_naws()."""
     # given a server
@@ -74,7 +74,7 @@ async def test_telnet_client_send_naws(bind_host, unused_tcp_port):
     assert recv_rows == given_rows
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_send_tty_naws(bind_host,
                                      unused_tcp_port):
     """Test Client's NAWS of callback method send_naws()."""
@@ -106,7 +106,7 @@ async def test_telnet_client_send_tty_naws(bind_host,
     assert recv_rows == given_rows
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_telnet_client_send_naws_65534(bind_host, unused_tcp_port):
     """Test Client's NAWS boundary values."""
     # given a server
