@@ -8,7 +8,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -18,7 +17,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_telnet_server_default_timeout(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
     from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
@@ -28,10 +27,10 @@ async def test_telnet_server_default_timeout(
     await asynctelnet.create_server(
         _waiter_connected=_waiter,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, timeout=given_timeout)
+        timeout=given_timeout)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     writer.write(IAC + WONT + TTYPE)
 
@@ -45,7 +44,7 @@ async def test_telnet_server_default_timeout(
 
 @pytest.mark.asyncio
 async def test_telnet_server_set_timeout(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
     from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
@@ -54,11 +53,10 @@ async def test_telnet_server_set_timeout(
     # exercise,
     await asynctelnet.create_server(
         _waiter_connected=_waiter,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     writer.write(IAC + WONT + TTYPE)
 
@@ -76,7 +74,7 @@ async def test_telnet_server_set_timeout(
 
 @pytest.mark.asyncio
 async def test_telnet_server_waitfor_timeout(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test callback on_timeout() as coroutine of create_server()."""
     from asynctelnet.telopt import IAC, DO, WONT, TTYPE
     # given,
@@ -84,10 +82,10 @@ async def test_telnet_server_waitfor_timeout(
 
     await asynctelnet.create_server(
         host=bind_host, port=unused_tcp_port,
-        timeout=0.050, loop=event_loop)
+        timeout=0.050)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     writer.write(IAC + WONT + TTYPE)
 

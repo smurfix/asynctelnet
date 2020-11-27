@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -17,7 +16,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_server_demands_remote_linemode_client_agrees(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE
     from asynctelnet.slc import (LMODE_MODE, LMODE_MODE_ACK)
 
@@ -32,10 +31,10 @@ async def test_server_demands_remote_linemode_client_agrees(
     await asynctelnet.create_server(
         protocol_factory=ServerTestLinemode,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, _waiter_connected=_waiter)
+        _waiter_connected=_waiter)
 
     client_reader, client_writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE
@@ -71,7 +70,7 @@ async def test_server_demands_remote_linemode_client_agrees(
 
 @pytest.mark.asyncio
 async def test_server_demands_remote_linemode_client_demands_local(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     from asynctelnet.telopt import IAC, DO, WILL, LINEMODE, SB, SE
     from asynctelnet.slc import (LMODE_MODE, LMODE_MODE_LOCAL, LMODE_MODE_ACK)
 
@@ -86,10 +85,10 @@ async def test_server_demands_remote_linemode_client_demands_local(
     await asynctelnet.create_server(
         protocol_factory=ServerTestLinemode,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, _waiter_connected=_waiter)
+        _waiter_connected=_waiter)
 
     client_reader, client_writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE

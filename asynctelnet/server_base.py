@@ -24,15 +24,14 @@ class BaseServer(asyncio.streams.FlowControlMixin, asyncio.Protocol):
     _writer_factory = TelnetWriter
     _writer_factory_encoding = TelnetWriterUnicode
 
-    def __init__(self, shell=None, log=None, loop=None,
+    def __init__(self, shell=None, log=None,
                  _waiter_connected=None, _waiter_closed=None,
                  encoding='utf8', encoding_errors='strict',
                  force_binary=False, connect_maxwait=4.0,
                  limit=None):
         """Class initializer."""
-        super().__init__(loop=loop)
+        super().__init__()
         self.log = log or logging.getLogger('asynctelnet.server')
-        self._loop = loop or asyncio.get_event_loop()
         self.default_encoding = encoding
         self._encoding_errors = encoding_errors
         self.force_binary = force_binary
@@ -109,8 +108,8 @@ class BaseServer(asyncio.streams.FlowControlMixin, asyncio.Protocol):
 
         reader_factory = self._reader_factory
         writer_factory = self._writer_factory
-        reader_kwds = {'loop': self._loop}
-        writer_kwds = {'loop': self._loop}
+        reader_kwds = {}
+        writer_kwds = {}
 
         if self.default_encoding:
             reader_kwds['fn_encoding'] = self.encoding

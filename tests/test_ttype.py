@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -16,7 +15,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_telnet_server_on_ttype(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_server_on_ttype(bind_host, unused_tcp_port):
     """Test Server's callback method on_ttype()."""
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
@@ -29,11 +28,10 @@ async def test_telnet_server_on_ttype(event_loop, bind_host, unused_tcp_port):
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)
@@ -49,7 +47,7 @@ async def test_telnet_server_on_ttype(event_loop, bind_host, unused_tcp_port):
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_ttype_beyond_max(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """
     Test Server's callback method on_ttype() with long list.
 
@@ -73,11 +71,10 @@ async def test_telnet_server_on_ttype_beyond_max(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)
@@ -103,7 +100,7 @@ async def test_telnet_server_on_ttype_beyond_max(
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_ttype_empty(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_ttype(): empty value is ignored. """
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
@@ -118,11 +115,10 @@ async def test_telnet_server_on_ttype_empty(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)
@@ -140,7 +136,7 @@ async def test_telnet_server_on_ttype_empty(
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_ttype_looped(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_ttype() when value looped. """
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
@@ -158,11 +154,10 @@ async def test_telnet_server_on_ttype_looped(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)
@@ -182,7 +177,7 @@ async def test_telnet_server_on_ttype_looped(
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_ttype_repeated(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_ttype() when value repeats. """
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
@@ -200,11 +195,10 @@ async def test_telnet_server_on_ttype_repeated(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)
@@ -224,7 +218,7 @@ async def test_telnet_server_on_ttype_repeated(
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_ttype_mud(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_ttype() for MUD clients (MTTS). """
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
@@ -242,11 +236,10 @@ async def test_telnet_server_on_ttype_mud(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TTYPE)

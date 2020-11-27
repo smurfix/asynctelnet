@@ -58,7 +58,7 @@ class TelnetWriter(asyncio.StreamWriter):
         bytes([ord(slc.LMODE_MODE_REMOTE) | ord(slc.LMODE_MODE_LIT_ECHO)]))
 
     def __init__(self, transport, protocol, *, client=False, server=False,
-                 reader=None, loop=None, log=None):
+                 reader=None, log=None):
         """
         A writer interface for the telnet protocol.
 
@@ -85,15 +85,9 @@ class TelnetWriter(asyncio.StreamWriter):
             the server point of view.
         :param logging.Logger log: target logger, if None is given, one is
             created using the namespace ``'asynctelnet.stream_writer'``.
-        :param asyncio.AbstractEventLoop loop: set the event loop to
-            use.  The return value of :func:`asyncio.get_event_loop` is used
-            when unset.
         """
         # fix tests in 3.8
-        if loop is None and sys.version_info[:2] >= (3, 8):
-            loop = asyncio.get_event_loop()
-
-        asyncio.StreamWriter.__init__(self, transport, protocol, reader, loop)
+        asyncio.StreamWriter.__init__(self, transport, protocol, reader)
 
         if not any((client, server)) or all((client, server)):
             raise TypeError("keyword arguments `client', and `server' "

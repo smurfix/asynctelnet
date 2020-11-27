@@ -229,7 +229,7 @@ class TelnetTerminalClient(TelnetClient):
 
 
 @asyncio.coroutine
-def open_connection(host=None, port=23, *, client_factory=None, loop=None,
+def open_connection(host=None, port=23, *, client_factory=None,
                     family=0, flags=0, local_addr=None, log=None,
                     encoding='utf8', encoding_errors='replace',
                     force_binary=False, term='unknown', cols=80, rows=25,
@@ -245,8 +245,6 @@ def open_connection(host=None, port=23, *, client_factory=None, loop=None,
     :param client_base.BaseClient client_factory: Client connection class
         factory.  When ``None``, :class:`TelnetTerminalClient` is used when
         *stdin* is attached to a terminal, :class:`TelnetClient` otherwise.
-    :param asyncio.AbstractEventLoop loop: set the event loop to use.
-        The return value of :func:`asyncio.get_event_loop` is used when unset.
     :param int family: Same meaning as
         :meth:`asyncio.loop.create_connection`.
     :param int flags: Same meaning as
@@ -309,7 +307,6 @@ def open_connection(host=None, port=23, *, client_factory=None, loop=None,
     This function is a :func:`~asyncio.coroutine`.
     """
     log = log or logging.getLogger(__name__)
-    loop = loop or asyncio.get_event_loop()
 
     if client_factory is None:
         client_factory = TelnetClient
@@ -350,11 +347,8 @@ def main():
         logfmt=kwargs.pop('logfmt'))
     log.debug(config_msg)
 
-    loop = asyncio.get_event_loop()
-
     # connect
-    reader, writer = loop.run_until_complete(
-        open_connection(host, port, **kwargs))
+    anyio.run(partial(open_connection,host, port, **kwargs)))
 
     # repl loop
     loop.run_until_complete(writer.protocol.waiter_closed)

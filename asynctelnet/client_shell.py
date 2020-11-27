@@ -44,9 +44,8 @@ else:
             'mode', ['iflag', 'oflag', 'cflag', 'lflag',
                      'ispeed', 'ospeed', 'cc'])
 
-        def __init__(self, telnet_writer, loop=None):
+        def __init__(self, telnet_writer):
             self.telnet_writer = telnet_writer
-            self.loop = loop or asyncio.get_event_loop()
             self._fileno = sys.stdin.fileno()
             self._istty = os.path.sameopenfile(0, 1)
 
@@ -170,10 +169,9 @@ else:
 
         This function is a :func:`~asyncio.coroutine`.
         """
-        loop = asyncio.get_event_loop()
         keyboard_escape = '\x1d'
 
-        with Terminal(telnet_writer=telnet_writer, loop=loop) as term:
+        with Terminal(telnet_writer=telnet_writer) as term:
             linesep = '\n'
             if term._istty and telnet_writer.will_echo:
                 linesep = '\r\n'

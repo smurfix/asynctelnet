@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -16,7 +15,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_telnet_server_on_tspeed(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_server_on_tspeed(bind_host, unused_tcp_port):
     """Test Server's callback method on_tspeed()."""
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TSPEED
@@ -29,11 +28,10 @@ async def test_telnet_server_on_tspeed(event_loop, bind_host, unused_tcp_port):
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTspeed,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + TSPEED)
@@ -45,7 +43,7 @@ async def test_telnet_server_on_tspeed(event_loop, bind_host, unused_tcp_port):
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_tspeed(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_send_tspeed(bind_host, unused_tcp_port):
     """Test Client's callback method send_tspeed()."""
     # given
     _waiter = asyncio.Future()
@@ -63,11 +61,10 @@ async def test_telnet_client_send_tspeed(event_loop, bind_host, unused_tcp_port)
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestTspeed,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         tspeed=(given_rx, given_tx), connect_minwait=0.05)
 
     recv_rx, recv_tx = await asyncio.wait_for(_waiter, 0.5)

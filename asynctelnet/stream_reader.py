@@ -105,7 +105,7 @@ class TelnetReaderUnicode(TelnetReader):
     _decoder = None
 
     def __init__(self, fn_encoding, *, limit=asyncio.streams._DEFAULT_LIMIT,
-                 loop=None, encoding_errors='replace'):
+                 encoding_errors='replace'):
         """
         A Unicode StreamReader interface for Telnet protocol.
 
@@ -114,8 +114,7 @@ class TelnetReaderUnicode(TelnetReader):
             to determine what encoding should be used to decode the value in
             the direction specified.
         """
-        loop = loop or asyncio.get_event_loop()
-        super().__init__(limit=limit, loop=loop)
+        super().__init__(limit=limit)
 
         self.fn_encoding = fn_encoding
         self.encoding_errors = encoding_errors

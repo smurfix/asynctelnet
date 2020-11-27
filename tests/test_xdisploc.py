@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -17,7 +16,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_xdisploc(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_xdisploc()."""
     # given
     from asynctelnet.telopt import (
@@ -33,11 +32,10 @@ async def test_telnet_server_on_xdisploc(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestXdisploc,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + XDISPLOC)
@@ -51,7 +49,7 @@ async def test_telnet_server_on_xdisploc(
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_xdisploc(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_send_xdisploc(bind_host, unused_tcp_port):
     """Test Client's callback method send_xdisploc()."""
     # given
     _waiter = asyncio.Future()
@@ -69,11 +67,10 @@ async def test_telnet_client_send_xdisploc(event_loop, bind_host, unused_tcp_por
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestXdisploc,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         xdisploc=given_xdisploc, connect_minwait=0.05)
 
     recv_xdisploc = await asyncio.wait_for(_waiter, 0.5)

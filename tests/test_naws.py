@@ -8,7 +8,6 @@ import struct
 import asynctelnet
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -18,7 +17,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_naws(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's Negotiate about window size (NAWS)."""
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, NAWS
@@ -33,10 +32,10 @@ async def test_telnet_server_on_naws(
     await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, connect_maxwait=0.05)
+        connect_maxwait=0.05)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + NAWS)
@@ -50,7 +49,7 @@ async def test_telnet_server_on_naws(
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_naws(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_send_naws(bind_host, unused_tcp_port):
     """Test Client's NAWS of callback method send_naws()."""
     # given a server
     _waiter = asyncio.Future()
@@ -64,10 +63,10 @@ async def test_telnet_client_send_naws(event_loop, bind_host, unused_tcp_port):
     await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, connect_maxwait=0.05)
+        connect_maxwait=0.05)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         cols=given_cols, rows=given_rows, connect_minwait=0.05)
 
     recv_cols, recv_rows = await asyncio.wait_for(_waiter, 0.5)
@@ -76,7 +75,7 @@ async def test_telnet_client_send_naws(event_loop, bind_host, unused_tcp_port):
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_tty_naws(event_loop, bind_host,
+async def test_telnet_client_send_tty_naws(bind_host,
                                      unused_tcp_port):
     """Test Client's NAWS of callback method send_naws()."""
     # given a client,
@@ -96,7 +95,7 @@ async def test_telnet_client_send_tty_naws(event_loop, bind_host,
     await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, connect_maxwait=0.05)
+        connect_maxwait=0.05)
 
     proc = pexpect.spawn(prog, args, dimensions=(given_rows, given_cols))
     await proc.expect(pexpect.EOF, async_=True, timeout=5)
@@ -108,7 +107,7 @@ async def test_telnet_client_send_tty_naws(event_loop, bind_host,
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_naws_65534(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_send_naws_65534(bind_host, unused_tcp_port):
     """Test Client's NAWS boundary values."""
     # given a server
     _waiter = asyncio.Future()
@@ -123,10 +122,10 @@ async def test_telnet_client_send_naws_65534(event_loop, bind_host, unused_tcp_p
     await asynctelnet.create_server(
         protocol_factory=ServerTestNaws,
         host=bind_host, port=unused_tcp_port,
-        loop=event_loop, connect_maxwait=0.05)
+        connect_maxwait=0.05)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         cols=given_cols, rows=given_rows, connect_minwait=0.05)
 
     recv_cols, recv_rows = await asyncio.wait_for(_waiter, 0.5)

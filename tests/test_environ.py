@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -17,7 +16,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_environ(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_environ()."""
     # given
     from asynctelnet.telopt import (
@@ -32,11 +31,10 @@ async def test_telnet_server_on_environ(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     # exercise,
     writer.write(IAC + WILL + NEW_ENVIRON)
@@ -57,7 +55,7 @@ async def test_telnet_server_on_environ(
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_environ(event_loop, bind_host,
+async def test_telnet_client_send_environ(bind_host,
                                     unused_tcp_port):
     """Test Client's callback method send_environ() for specific requests."""
     # given
@@ -74,11 +72,10 @@ async def test_telnet_client_send_environ(event_loop, bind_host,
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05)
 
@@ -92,7 +89,7 @@ async def test_telnet_client_send_environ(event_loop, bind_host,
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_var_uservar_environ(event_loop, bind_host,
+async def test_telnet_client_send_var_uservar_environ(bind_host,
                                                 unused_tcp_port):
     """Test Client's callback method send_environ() for VAR/USERVAR request."""
     # given
@@ -113,11 +110,10 @@ async def test_telnet_client_send_var_uservar_environ(event_loop, bind_host,
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05, connect_maxwait=0.05)
 
@@ -137,7 +133,7 @@ async def test_telnet_client_send_var_uservar_environ(event_loop, bind_host,
 
 
 @pytest.mark.asyncio
-async def test_telnet_server_reject_environ(event_loop, bind_host,
+async def test_telnet_server_reject_environ(bind_host,
                                       unused_tcp_port):
     """Test Client's callback method send_environ() for specific requests."""
     from asynctelnet.telopt import SB, NEW_ENVIRON
@@ -153,11 +149,10 @@ async def test_telnet_server_reject_environ(event_loop, bind_host,
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestEnviron,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         cols=given_cols, rows=given_rows, encoding=given_encoding,
         term=given_term, connect_minwait=0.05, connect_maxwait=0.05)
 

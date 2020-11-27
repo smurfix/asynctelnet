@@ -7,7 +7,6 @@ import asynctelnet
 import asynctelnet.stream_writer
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
-    event_loop,
     bind_host
 )
 
@@ -17,7 +16,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_charset(
-        event_loop, bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port):
     """Test Server's callback method on_charset()."""
     # given
     from asynctelnet.telopt import (
@@ -33,11 +32,10 @@ async def test_telnet_server_on_charset(
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestCharset,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port, loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     val = await asyncio.wait_for(reader.readexactly(3), 0.5)
     # exercise,
@@ -53,7 +51,7 @@ async def test_telnet_server_on_charset(
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_send_charset(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_send_charset(bind_host, unused_tcp_port):
     """Test Client's callback method send_charset() selection for illegals."""
     # given
     _waiter = asyncio.Future()
@@ -71,14 +69,13 @@ async def test_telnet_client_send_charset(event_loop, bind_host, unused_tcp_port
     await asyncio.wait_for(
         asynctelnet.create_server(
             protocol_factory=ServerTestCharset,
-            host=bind_host, port=unused_tcp_port,
-            loop=event_loop),
+            host=bind_host, port=unused_tcp_port)
         0.15)
 
     reader, writer = await asyncio.wait_for(
         asynctelnet.open_connection(
             client_factory=ClientTestCharset,
-            host=bind_host, port=unused_tcp_port, loop=event_loop,
+            host=bind_host, port=unused_tcp_port,
             encoding='latin1', connect_minwait=0.05),
         0.15)
 
@@ -88,7 +85,7 @@ async def test_telnet_client_send_charset(event_loop, bind_host, unused_tcp_port
 
 
 @pytest.mark.asyncio
-async def test_telnet_client_no_charset(event_loop, bind_host, unused_tcp_port):
+async def test_telnet_client_no_charset(bind_host, unused_tcp_port):
     """Test Client's callback method send_charset() does not select."""
     # given
     _waiter = asyncio.Future()
@@ -105,12 +102,11 @@ async def test_telnet_client_no_charset(event_loop, bind_host, unused_tcp_port):
 
     await asynctelnet.create_server(
         protocol_factory=ServerTestCharset,
-        host=bind_host, port=unused_tcp_port,
-        loop=event_loop)
+        host=bind_host, port=unused_tcp_port)
 
     reader, writer = await asynctelnet.open_connection(
         client_factory=ClientTestCharset,
-        host=bind_host, port=unused_tcp_port, loop=event_loop,
+        host=bind_host, port=unused_tcp_port,
         encoding='latin1', connect_minwait=0.05)
 
     # charset remains latin1

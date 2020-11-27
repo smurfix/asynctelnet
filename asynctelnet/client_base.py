@@ -24,7 +24,7 @@ class BaseClient(asyncio.streams.FlowControlMixin, asyncio.Protocol):
     _writer_factory = TelnetWriter
     _writer_factory_encoding = TelnetWriterUnicode
 
-    def __init__(self, shell=None, log=None, loop=None,
+    def __init__(self, shell=None, log=None,
                  encoding='utf8', encoding_errors='strict',
                  force_binary=False, connect_minwait=1.0,
                  connect_maxwait=4.0, limit=None,

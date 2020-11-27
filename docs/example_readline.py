@@ -35,7 +35,6 @@ class Lander(object):
     def __init__(self):
         self.log = logging.getLogger('lunar.lander')
         self.clients = []
-        self._loop = asyncio.get_event_loop()
 
     def __str__(self):
         collector = 'RUNNING' if self.collecting else 'READY'
