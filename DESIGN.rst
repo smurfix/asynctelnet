@@ -472,7 +472,7 @@ TODO
 ====
 
 - xon/xoff is unimplemented, see
-  asynctelnet.stream_writer.TelnetWriter.handle_xon and handle_xoff.
+  asynctelnet.stream.TelnetStream.handle_xon and handle_xoff.
 
 - After long-running (~2mo) job of asynctelnet server on public IP, we ran
   out of memory ! write test verifying garbage collects!

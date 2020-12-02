@@ -1,0 +1,3 @@
+#!/usr/bin/python3
+from asynctelnet.client import main
+main()

@@ -4,7 +4,7 @@ import asyncio
 
 # local imports
 import asynctelnet
-import asynctelnet.stream_writer
+import asynctelnet.stream
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
     bind_host
@@ -36,7 +36,7 @@ async def test_server_demands_remote_linemode_client_agrees(
     client_reader, client_writer = await asyncio.open_connection(
         host=bind_host, port=unused_tcp_port)
 
-    expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
+    expect_mode = asynctelnet.stream.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE
     expect_stage2 = IAC + SB + LINEMODE + LMODE_MODE + expect_mode + IAC + SE
 
@@ -90,7 +90,7 @@ async def test_server_demands_remote_linemode_client_demands_local(
     client_reader, client_writer = await asyncio.open_connection(
         host=bind_host, port=unused_tcp_port)
 
-    expect_mode = asynctelnet.stream_writer.TelnetWriter.default_linemode.mask
+    expect_mode = asynctelnet.stream.default_linemode.mask
     expect_stage1 = IAC + DO + LINEMODE
     expect_stage2 = IAC + SB + LINEMODE + LMODE_MODE + expect_mode + IAC + SE
 

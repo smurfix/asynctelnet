@@ -10,12 +10,12 @@
 Introduction
 ============
 
-asynctelnet is a Telnet Client and Server library for python.  This project
-requires python 3.6 and later, using the anyio_ module.
+asynctelnet is an asynchronous Telnet Client and Server library for python.
+This project requires python 3.6 and later, using the anyio_ module.
 
 .. _anyio: https://anyio.readthedocs.io/
 
-asynctelnet is an anyio-ization of the telnetlib3_ module.
+asynctelnet is a heavily modified anyio-ization of the telnetlib3_ module.
 
 .. _telnetlib3: https://telnetlib3.readthedocs.io/
 
@@ -30,9 +30,8 @@ Authoring a Telnet Server using Streams interface that offers a basic war game:
     import anyio, asynctelnet
 
     async def shell(tcp):
-        async with asynctelnet.Stream(tcp, server=True) as stream:
-            # TODO setup telnet options here
-
+        async with asynctelnet.TelnetServer(tcp) as stream:
+            # this will fail if no charset has been negotiated
             await stream.send('\r\nWould you like to play a game? ')
             inp = await reader.receive(1)
             if inp:
@@ -41,7 +40,7 @@ Authoring a Telnet Server using Streams interface that offers a basic war game:
                                   'is to not play at all.\r\n')
 
     async def main():
-        listener = await anyio.create_tcp_listener(local_port=6023)
+        listener = await anyio.create_tcp_listener(local_port=56023)
         await listener.serve(shell)
     anyio.run(main)
 
@@ -52,7 +51,7 @@ Authoring a Telnet Client that plays the war game with this server:
     import anyio, asynctelnet
 
     async def shell(tcp):
-        async with asynctelnet.Stream(tcp, client=True) as stream:
+        async with asynctelnet.TelnetClient(tcp, client=True) as stream:
             while True:
                 # read stream until '?' mark is found
                 outp = await stream.receive(1024)
@@ -70,15 +69,15 @@ Authoring a Telnet Client that plays the war game with this server:
         print()
     
     async def main():
-        async with await connect_tcp('localhost', 6023) as client:
+        async with await connect_tcp('localhost', 56023) as client:
             await shell(client)
     anyio.run(main)
 
 
-Command-line
+Command Line
 ------------
 
-Two command-line scripts are distributed with this package.
+Two command line scripts are distributed with this package.
 
 ``asynctelnet-client``
 

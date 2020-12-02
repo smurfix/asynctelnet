@@ -4,7 +4,7 @@ import asyncio
 
 # local imports
 import asynctelnet
-import asynctelnet.stream_writer
+import asynctelnet.stream
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
     bind_host
@@ -195,7 +195,7 @@ async def test_telnet_server_encoding_by_LANG(
     writer.write(IAC + WILL + BINARY)
     writer.write(IAC + WILL + NEW_ENVIRON)
     writer.write(IAC + SB + NEW_ENVIRON + IS +
-                 asynctelnet.stream_writer._encode_env_buf({
+                 asynctelnet.stream._encode_env_buf({
                      'LANG': 'uk_UA.KOI8-U',
                  }) + IAC + SE)
     writer.write(IAC + WONT + TTYPE)

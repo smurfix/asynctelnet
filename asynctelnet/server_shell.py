@@ -1,4 +1,5 @@
-import asyncio
+import anyio
+from anyio.streams.text import TextStream
 
 CR, LF, NUL = '\r\n\x00'
 from . import slc
@@ -8,7 +9,7 @@ from . import accessories
 __all__ = ('telnet_server_shell',)
 
 
-async def telnet_server_shell(reader, writer):
+async def telnet_server_shell(stream):
     """
     A default telnet shell, appropriate for use with asynctelnet.create_server.
 
@@ -16,80 +17,36 @@ async def telnet_server_shell(reader, writer):
     toggling of the connected client session.
 
     """
-    writer.write("Ready." + CR + LF)
-
-    linereader = readline(reader, writer)
-    linereader.send(None)
+    stream = RLTextStream(stream)
+    await stream.send("Ready." + CR + LF)
 
     command = None
     while True:
         if command:
-            writer.write(CR + LF)
-        writer.write('tel:sh> ')
-        command = None
-        while command is None:
-            # TODO: use reader.readline()
-            inp = await reader.read(1)
-            if not inp:
-                return
-            command = linereader.send(inp)
-        writer.write(CR + LF)
+            await writer.send(CR + LF)
+        await writer.send('tel:sh> ')
+        command = await stream.readline()
+        if not command:
+            return
+        await stream.send(CR + LF)
         if command == 'quit':
-            writer.write('Goodbye.' + CR + LF)
+            await stream.send('Goodbye.' + CR + LF)
             break
         elif command == 'help':
-            writer.write('quit, writer, slc, toggle [option|all], '
-                         'reader, proto')
-        elif command == 'writer':
-            writer.write(repr(writer))
-        elif command == 'reader':
-            writer.write(repr(reader))
-        elif command == 'proto':
-            writer.write(repr(writer.protocol))
+            await stream.send('quit, stream, slc, toggle [option|all], '
+                         '… and that\'s it.')
+        elif command == 'stream':
+            await stream.send(repr(stream))
         elif command == 'version':
-            writer.write(accessories.get_version())
+            await stream.send(accessories.get_version())
         elif command == 'slc':
-            writer.write(get_slcdata(writer))
+            await stream.send(get_slcdata(stream))
         elif command.startswith('toggle'):
             option = command[len('toggle '):] or None
-            writer.write(do_toggle(writer, option))
+            await stream.send(await do_toggle(stream, option))
         elif command:
-            writer.write('no such command.')
-    writer.close()
-
-
-async def readline(reader, writer):
-    """
-    A very crude readline coroutine interface.
-
-    """
-    command, inp, last_inp = '', '', ''
-    inp = yield None
-    while True:
-        if inp in (LF, NUL) and last_inp == CR:
-            last_inp = inp
-            inp = yield None
-
-        elif inp in (CR, LF):
-            # first CR or LF yields command
-            last_inp = inp
-            inp = yield command
-            command = ''
-
-        elif inp in ('\b', '\x7f'):
-            # backspace over input
-            if command:
-                command = command[:-1]
-                writer.echo('\b \b')
-            last_inp = inp
-            inp = yield None
-
-        else:
-            # buffer and echo input
-            command += inp
-            writer.echo(inp)
-            last_inp = inp
-            inp = yield None
+            await stream.send(f'no such command: {command!r}.')
+    await stream.aclose()
 
 
 def get_slcdata(writer):
@@ -116,7 +73,7 @@ def get_slcdata(writer):
             ', '.join(_nosupport))
 
 
-def do_toggle(writer, option):
+async def do_toggle(writer, option):
     """Display or toggle telnet session parameters."""
     tbl_opt = {
         'echo': writer.local_option.enabled(telopt.ECHO),
@@ -136,37 +93,37 @@ def do_toggle(writer, option):
     msgs = []
     if option in ('echo', 'all'):
         cmd = (telopt.WONT if tbl_opt['echo'] else telopt.WILL)
-        writer.iac(cmd, telopt.ECHO)
+        await writer.iac(cmd, telopt.ECHO)
         msgs.append('{} echo.'.format(
             telopt.name_command(cmd).lower()))
 
     if option in ('goahead', 'all'):
         cmd = (telopt.WILL if tbl_opt['goahead'] else telopt.WONT)
-        writer.iac(cmd, telopt.SGA)
+        await writer.iac(cmd, telopt.SGA)
         msgs.append('{} suppress go-ahead.'.format(
             telopt.name_command(cmd).lower()))
 
     if option in ('outbinary', 'binary', 'all'):
         cmd = (telopt.WONT if tbl_opt['outbinary'] else telopt.WILL)
-        writer.iac(cmd, telopt.BINARY)
+        await writer.iac(cmd, telopt.BINARY)
         msgs.append('{} outbinary.'.format(
             telopt.name_command(cmd).lower()))
 
     if option in ('inbinary', 'binary', 'all'):
         cmd = (telopt.DONT if tbl_opt['inbinary'] else telopt.DO)
-        writer.iac(cmd, telopt.BINARY)
+        await writer.iac(cmd, telopt.BINARY)
         msgs.append('{} inbinary.'.format(
             telopt.name_command(cmd).lower()))
 
     if option in ('xon-any', 'all'):
         writer.xon_any = not tbl_opt['xon-any']
-        writer.send_lineflow_mode()
+        await writer.send_lineflow_mode()
         msgs.append('xon-any {}abled.'.format(
             'en' if writer.xon_any else 'dis'))
 
     if option in ('lflow', 'all'):
         writer.lflow = not tbl_opt['lflow']
-        writer.send_lineflow_mode()
+        await writer.send_lineflow_mode()
         msgs.append('lineflow {}abled.'.format(
             'en' if writer.lflow else 'dis'))
 
@@ -175,3 +132,47 @@ def do_toggle(writer, option):
 
 
     return '\r\n'.join(msgs)
+
+class ReadLine:
+    """
+    A very primitive readline wrapper.
+
+    Usage::
+        rl = ReadLine(stream)
+        while True:
+            line = await rl()
+    """
+    def __init__(self, stream):
+        self._stream = stream
+        self._buf = ''
+        self._echo = self.extra_attributes[EchoAttr]
+        self._last_inp = ''
+
+    async def __call__(self):
+        buf = self._buf
+        command = ""
+        while True:
+            if buf == "":
+                buf = await self._stream.receive()
+            for i,inp in enumerate(buf):
+                if inp in (LF, NUL) and self._last_inp == CR:
+                    self._buf = buf[i+1:]
+                    return command
+
+                elif inp in (CR, LF):
+                    # first CR or LF yields command
+                    self._buf = buf[i+1:]
+                    return command
+
+                elif inp in ('\b', '\x7f'):
+                    # backspace over input
+                    if command:
+                        command = command[:-1]
+                        await self.send('\b \b')
+
+                else:
+                    # buffer and echo input
+                    command += inp
+                    await self._stream.echo(inp)
+                    self._last_inp = inp
+

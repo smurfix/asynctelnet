@@ -15,12 +15,14 @@ import asyncio
 import logging
 import signal
 from weakref import proxy
+from contextlib import asynccontextmanager
+from functools import partial
 
 # local
 from . import server_base
 from . import accessories
 
-__all__ = ('TelnetServer', 'create_server', 'run_server', 'parse_server_args')
+__all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
 
 CONFIG = collections.namedtuple('CONFIG', [
     'host', 'port', 'loglevel', 'logfile', 'logfmt', 'shell', 'encoding',
@@ -47,50 +49,54 @@ class TelnetServer(server_base.BaseServer):
         self._tasks.append(self.waiter_encoding)
         self._ttype_count = 1
         self._timer = None
-        self._extra.update({
+        self._extra = {
             'term': term,
             'charset': kwargs.get('encoding', ''),
             'cols': cols,
             'rows': rows,
             'timeout': timeout
-        })
+        }
 
-    def connection_made(self, transport):
+    @property
+    def extra_attributes(self):
+        res = super().extra_attributes
+        for k in self._extra.keys(): 
+            def fn(k):
+                return lambda: self._extra[k] 
+            res[k] = fn(k)
+        return res
+
+    async def setup(self):
         from .telopt import NAWS, NEW_ENVIRON, TSPEED, TTYPE, XDISPLOC, CHARSET
-        super().connection_made(transport)
+        await super().setup()
 
         # begin timeout timer
-        self.set_timeout()
+        async with self.with_timeout():
 
-        # Wire extended rfc callbacks for responses to
-        # requests of terminal attributes, environment values, etc.
-        for tel_opt, callback_fn in [
-            (NAWS, self.on_naws),
-            (NEW_ENVIRON, self.on_environ),
-            (TSPEED, self.on_tspeed),
-            (TTYPE, self.on_ttype),
-            (XDISPLOC, self.on_xdisploc),
-            (CHARSET, self.on_charset),
-        ]:
-            self.writer.set_ext_callback(tel_opt, callback_fn)
+            # Wire extended rfc callbacks for responses to
+            # requests of terminal attributes, environment values, etc.
+            for tel_opt, callback_fn in [
+                (NAWS, self.on_naws),
+                (NEW_ENVIRON, self.on_environ),
+                (TSPEED, self.on_tspeed),
+                (TTYPE, self.on_ttype),
+                (XDISPLOC, self.on_xdisploc),
+                (CHARSET, self.on_charset),
+            ]:
+                self.writer.set_ext_callback(tel_opt, callback_fn)
 
-        # Wire up a callbacks that return definitions for requests.
-        for tel_opt, callback_fn in [
-            (NEW_ENVIRON, self.on_request_environ),
-            (CHARSET, self.on_request_charset),
-        ]:
-            self.writer.set_ext_send_callback(tel_opt, callback_fn)
+            # Wire up a callbacks that return definitions for requests.
+            for tel_opt, callback_fn in [
+                (NEW_ENVIRON, self.on_request_environ),
+                (CHARSET, self.on_request_charset),
+            ]:
+                self.writer.set_ext_send_callback(tel_opt, callback_fn)
 
-    def data_received(self, data):
-        self.set_timeout()
-        super().data_received(data)
-
-    def begin_negotiation(self):
-        from .telopt import DO, TTYPE
+        from .telopt import DO, WILL, TTYPE
         super().begin_negotiation()
-        self.writer.iac(DO, TTYPE)
+        self.iac(DO, TTYPE)
+        await self.wait_for(WILL, TTYPE)
 
-    def begin_advanced_negotiation(self):
         from .telopt import (DO, WILL, SGA, ECHO, BINARY,
                              NEW_ENVIRON, NAWS, CHARSET)
         super().begin_advanced_negotiation()
@@ -167,7 +173,7 @@ class TelnetServer(server_base.BaseServer):
             # for modern systems, this is the preferred method of encoding
             # negotiation.
             _lang = self.get_extra_info('LANG', '')
-            if _lang and _lang != 'C':
+            if _lang:
                 return accessories.encoding_from_lang(_lang)
 
             # otherwise, the less CHARSET negotiation may be found in many
@@ -175,7 +181,8 @@ class TelnetServer(server_base.BaseServer):
             return self.get_extra_info('charset') or self.default_encoding
         return 'US-ASCII'
 
-    def set_timeout(self, duration=-1):
+    @asynccontextmanager
+    async def with_timeout(self, duration=-1):
         """
         Restart or unset timeout for client.
 
@@ -186,30 +193,11 @@ class TelnetServer(server_base.BaseServer):
         """
         if duration == -1:
             duration = self.get_extra_info('timeout')
-        if self._timer is not None:
-            if self._timer in self._tasks:
-                self._tasks.remove(self._timer)
-            self._timer.cancel()
-        if duration:
-            self._timer = self._loop.call_later(duration, self.on_timeout)
-            self._tasks.append(self._timer)
-        self._extra['timeout'] = duration
-
-    # Callback methods
-
-    def on_timeout(self):
-        """
-        Callback received on session timeout.
-
-        Default implementation writes "Timeout." bound by CRLF and closes.
-
-        This can be disabled by calling :meth:`set_timeout` with
-        :paramref:`~.set_timeout.duration` value of ``0`` or value of
-        the same for keyword argument ``timeout``.
-        """
-        self.log.debug('Timeout after {self.idle:1.2f}s'.format(self=self))
-        self.writer.write('\r\nTimeout.\r\n')
-        self.writer.close()
+        if duration > 0:
+            async with anyio.move_on_after(duration) as sc:
+                yield sc
+        else:
+            yield None
 
     def on_naws(self, rows, cols):
         """
@@ -367,9 +355,9 @@ class TelnetServer(server_base.BaseServer):
         return self.writer.outbinary and self.writer.inbinary
 
 
-async def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwds):
+async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=None, **kwds):
     """
-    Create a TCP Telnet server.
+    Run a TCP Telnet server.
 
     :param str host: The host parameter can be a string, in that case the TCP
         server is bound to host and port. The host parameter can also be a
@@ -379,10 +367,9 @@ async def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwd
     :param server_base.BaseServer protocol_factory: An alternate protocol
         factory for the server, when unspecified, :class:`TelnetServer` is
         used.
+
     :param Callable shell: A coroutine that is called after
-        negotiation completes, receiving arguments ``(reader, writer)``.
-        The reader is a :class:`~.TelnetReader` instance, the writer is
-        a :class:`~.TelnetWriter` instance.
+        negotiation completes, receiving the Telnet stream as an argument.
     :param logging.Logger log: target logger, if None is given, one is created
         using the namespace ``'asynctelnet.server'``.
     :param str encoding: The default assumed encoding, or ``False`` to disable
@@ -390,15 +377,15 @@ async def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwd
         the client through NEW_ENVIRON :rfc:`1572` by sending environment value
         of ``LANG``, or by any legal value for CHARSET :rfc:`2066` negotiation.
 
-        The server's attached ``reader, writer`` streams accept and return
-        unicode, unless this value explicitly set ``False``.  In that case, the
-        attached streams interfaces are bytes-only.
+        The server's stream accepts and returns Unicode, unless this value
+        is explicitly set to ``None``.  In that case, the attached stream
+        interface is bytes-only.
     :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
         Default value is ``strict``.
     :param bool force_binary: When ``True``, the encoding specified is
         used for both directions even when BINARY mode, :rfc:`856`, is not
         negotiated for the direction specified.  This parameter has no effect
-        when ``encoding=False``.
+        when ``encoding=None``.
     :param str term: Value returned for ``writer.get_extra_info('term')``
         until negotiated by TTYPE :rfc:`930`, or NAWS :rfc:`1572`.  Default value
         is ``'unknown'``.
@@ -406,26 +393,23 @@ async def create_server(host=None, port=23, protocol_factory=TelnetServer, **kwd
         until negotiated by NAWS :rfc:`1572`. Default value is 80 columns.
     :param int rows: Value returned for ``writer.get_extra_info('rows')``
         until negotiated by NAWS :rfc:`1572`. Default value is 25 rows.
-    :param int timeout: Causes clients to disconnect if idle for this duration,
-        in seconds.  This ensures resources are freed on busy servers.  When
-        explicitly set to ``False``, clients will not be disconnected for
-        timeout. Default value is 300 seconds (5 minutes).
-    :param float connect_maxwait: If the remote end is not complaint, or
+    :param float connect_maxwait: If the remote end is not compliant, or
         otherwise confused by our demands, the shell continues anyway after the
         greater of this value has elapsed.  A client that is not answering
         option negotiation will delay the start of the shell by this amount.
-    :param int limit: The buffer limit for the reader stream.
 
-    :return asyncio.Server: The return value is the same as
-        :meth:`asyncio.loop.create_server`, An object which can be used
-        to stop the service.
-
+    This method does not return until cancelled.
     """
     protocol_factory = protocol_factory or TelnetServer
-    loop = kwds.get('loop', asyncio.get_event_loop())
-
-    return (await loop.create_server(
-        lambda: protocol_factory(**kwds), host, port))
+    l = await create_tcp_listener(local_host=host, local_port=port)
+    if shell is None:
+        async def shell(_s):
+            while True:
+                await anyio.sleep(99999)
+    async def serve(s):
+        async with protocol_factory(s, **kwds) as stream:
+            await shell(stream)
+    await l.serve(serve)
 
 
 async def _sigterm_handler(server, log):
@@ -478,21 +462,8 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
     given keyword arguments, serving forever, completing only upon receipt of
     SIGTERM.
     """
-    log = accessories.make_logger(
-        name='asynctelnet.server', loglevel=loglevel,
-        logfile=logfile, logfmt=logfmt)
-
-    # log all function arguments.
-    _locals = locals()
-    _cfg_mapping = ', '.join(('{0}={{{0}}}'.format(field)
-                              for field in CONFIG._fields)).format(**_locals)
-    log.debug('Server configuration: {}'.format(_cfg_mapping))
-
-    loop = asyncio.get_event_loop()
-
-    # bind
-    server = loop.run_until_complete(
-        create_server(host, port, shell=shell, encoding=encoding,
+    anyio.run(partial(
+        create_server, host, port, shell=shell, encoding=encoding,
                       force_binary=force_binary, timeout=timeout,
                       connect_maxwait=connect_maxwait))
 

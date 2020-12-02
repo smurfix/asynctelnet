@@ -4,12 +4,14 @@ Telnet Client API for the 'asynctelnet' python package.
 """
 # std imports
 import argparse
-import asyncio
 import logging
 import codecs
 import struct
+import anyio
 import sys
 import os
+from contextlib import asynccontextmanager
+from functools import partial
 
 # local imports
 from . import accessories
@@ -29,14 +31,14 @@ class TelnetClient(client_base.BaseClient):
     #: On :meth:`send_env`, the value of 'LANG' will be 'C' for binary
     #: transmission.  When encoding is specified (utf8 by default), the LANG
     #: variable must also contain a locale, this value is used, providing a
-    #: full default LANG value of 'en_US.utf8'
-    DEFAULT_LOCALE = 'en_US'
+    #: full default LANG value of 'C.utf8'
+    DEFAULT_LOCALE = 'C'
 
-    def __init__(self, term='unknown', cols=80, rows=25,
+    def __init__(self, conn, term='unknown', cols=80, rows=25,
                  tspeed=(38400, 38400), xdisploc='',
                  *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._extra.update({
+        super().__init__(conn, *args, **kwargs)
+        self.__extra = {
             'charset': kwargs['encoding'] or '',
             # for our purposes, we only send the second part (encoding) of our
             # 'lang' variable, CHARSET negotiation does not provide locale
@@ -53,13 +55,22 @@ class TelnetClient(client_base.BaseClient):
             'term': term,
             'tspeed': '{},{}'.format(*tspeed),
             'xdisploc': xdisploc,
-        })
+        }
 
-    def connection_made(self, transport):
-        """Callback for connection made to server."""
+    @property
+    def extra_attributes(self):
+        res = super().extra_attributes
+        for k in self.__extra.keys():
+            def fn(k):
+                return lambda: self.__extra[k] 
+            res[k] = fn(k)
+        return res
+
+    async def setup(self):
+        """Called after setting up."""
         from asynctelnet.telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON
         from asynctelnet.telopt import CHARSET, NAWS
-        super().connection_made(transport)
+        await super().setup()
 
         # Wire extended rfc callbacks for requests of
         # terminal attributes, environment values, etc.
@@ -71,21 +82,21 @@ class TelnetClient(client_base.BaseClient):
                 (NAWS, self.send_naws),
                 (CHARSET, self.send_charset),
                 ):
-            self.writer.set_ext_send_callback(opt, func)
+            self.set_ext_send_callback(opt, func)
 
-    def send_ttype(self):
+    async def send_ttype(self):
         """Callback for responding to TTYPE requests."""
-        return self._extra['term']
+        return self.__extra['term']
 
-    def send_tspeed(self):
+    async def send_tspeed(self):
         """Callback for responding to TSPEED requests."""
-        return tuple(map(int, self._extra['tspeed'].split(',')))
+        return tuple(map(int, self.__extra['tspeed'].split(',')))
 
-    def send_xdisploc(self):
+    async def send_xdisploc(self):
         """Callback for responding to XDISPLOC requests."""
-        return self._extra['xdisploc']
+        return self.__extra['xdisploc']
 
-    def send_env(self, keys):
+    async def send_env(self, keys):
         """
         Callback for responding to NEW_ENVIRON requests.
 
@@ -106,7 +117,7 @@ class TelnetClient(client_base.BaseClient):
         }
         return {key: env.get(key, '') for key in keys} or env
 
-    def send_charset(self, offered):
+    async def send_charset(self, offered):
         """
         Callback for responding to CHARSET requests.
 
@@ -143,7 +154,7 @@ class TelnetClient(client_base.BaseClient):
                              .format(offered))
         return selected
 
-    def send_naws(self):
+    async def send_naws(self):
         """
         Callback for responding to NAWS requests.
 
@@ -228,30 +239,24 @@ class TelnetTerminalClient(TelnetClient):
                     int(os.environ.get('COLUMNS', 80)))
 
 
-async def open_connection(host=None, port=23, *, client_factory=None,
-                         family=0, flags=0, local_addr=None, log=None,
+@asynccontextmanager
+async def open_connection(host=None, port=23, *, log=None, client_factory=None,
                          encoding='utf8', encoding_errors='replace',
                          force_binary=False, term='unknown', cols=80, rows=25,
-                         tspeed=(38400, 38400), xdisploc='', shell=None,
+                         tspeed=(38400, 38400), xdisploc='',
                          connect_minwait=2.0, connect_maxwait=3.0,
-                         waiter_closed=None, _waiter_connected=None,
-                         limit=None):
+                         waiter_closed=None, waiter_connected=None,
+                         **kwargs):
     """
     Connect to a TCP Telnet server as a Telnet client.
 
     :param str host: Remote Internet TCP Server host.
     :param int port: Remote Internet host TCP port.
+    :param logging.Logger log: target logger, if None is given, one is created
+        using the namespace ``'asynctelnet.server'``.
     :param client_base.BaseClient client_factory: Client connection class
         factory.  When ``None``, :class:`TelnetTerminalClient` is used when
         *stdin* is attached to a terminal, :class:`TelnetClient` otherwise.
-    :param int family: Same meaning as
-        :meth:`asyncio.loop.create_connection`.
-    :param int flags: Same meaning as
-        :meth:`asyncio.loop.create_connection`.
-    :param tuple local_addr: Same meaning as
-        :meth:`asyncio.loop.create_connection`.
-    :param logging.Logger log: target logger, if None is given, one is created
-        using the namespace ``'asynctelnet.server'``.
     :param str encoding: The default assumed encoding, or ``False`` to disable
         unicode support.  This value is used for decoding bytes received by and
         encoding bytes transmitted to the Server.  These values are preferred
@@ -285,22 +290,16 @@ async def open_connection(host=None, port=23, *, client_factory=None,
         A server that does not make any telnet demands, such as a TCP server
         that is not a telnet server will delay the execution of ``shell`` for
         exactly this amount of time.
-    :param float connect_maxwait: If the remote end is not complaint, or
-        otherwise confused by our demands and failing to reply to pending
-        negotiations, the shell continues anyway after the greater of this
-        value or ``connect_minwait`` elapsed.
     :param bool force_binary: When ``True``, the encoding specified is used for
         both directions even when failing ``BINARY`` negotiation, :rfc:`856`.
         This parameter has no effect when ``encoding=False``.
     :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
-    :param float connect_minwait: XXX
-    :param float connect_maxwait: If the remote end is not complaint, or
+    :param float connect_maxwait: If the remote end is not compliant, or
         otherwise confused by our demands, the shell continues anyway after the
         greater of this value has elapsed.  A client that is not answering
         option negotiation will delay the start of the shell by this amount.
 
-    :param int limit: The buffer limit for reader stream.
-    :return (reader, writer): The reader is a :class:`~.TelnetReader`
+    :return mgr: The reader is a :class:`~.TelnetReader`
         instance, the writer is a :class:`~.TelnetWriter` instance.
 
     """
@@ -308,26 +307,16 @@ async def open_connection(host=None, port=23, *, client_factory=None,
 
     if client_factory is None:
         client_factory = TelnetClient
-        if sys.platform != 'win32' and sys.stdin.isatty():
-            client_factory = TelnetTerminalClient
+    async with await anyio.connect_tcp(host, port, **kwargs) as conn:
+        async with client_factory(conn, term=term, cols=cols, rows=rows,
+                tspeed=tspeed, xdisploc=xdisploc,
+                log=log, encoding=encoding, encoding_errors=encoding_errors,
+                force_binary=force_binary) as stream:
+            yield stream
 
-    def connection_factory():
-        return client_factory(
-            log=log, encoding=encoding, encoding_errors=encoding_errors,
-            force_binary=force_binary, term=term, cols=cols, rows=rows,
-            tspeed=tspeed, xdisploc=xdisploc, shell=shell,
-            connect_minwait=connect_minwait, connect_maxwait=connect_maxwait,
-            waiter_closed=waiter_closed, _waiter_connected=_waiter_connected,
-            limit=limit)
-
-    transport, protocol = await loop.create_connection(
-        connection_factory, host, port,
-        family=family, flags=flags, local_addr=local_addr)
-
-    await protocol._waiter_connected
-
-    return protocol.reader, protocol.writer
-
+async def run_client(host, port=23, *, shell=None, **kw):
+    async with open_connection(host=host, port=port, **kw) as conn:
+        await shell(conn)
 
 def main():
     """Command-line 'asynctelnet-client' entry point, via setuptools."""
@@ -346,10 +335,7 @@ def main():
     log.debug(config_msg)
 
     # connect
-    anyio.run(partial(open_connection,host, port, **kwargs)))
-
-    # repl loop
-    loop.run_until_complete(writer.protocol.waiter_closed)
+    anyio.run(partial(run_client,host, port, **kwargs))
 
 
 def _get_argument_parser():

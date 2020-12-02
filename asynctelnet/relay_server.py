@@ -4,7 +4,6 @@ import logging
 import asyncio
 from .server_shell import readline
 from .client import open_connection
-from .accessories import make_reader_task
 
 async def relay_shell(client_reader, client_writer):
     """

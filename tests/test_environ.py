@@ -4,7 +4,7 @@ import asyncio
 
 # local imports
 import asynctelnet
-import asynctelnet.stream_writer
+import asynctelnet.stream
 from asynctelnet.tests.accessories import (
     unused_tcp_port,
     bind_host
@@ -39,7 +39,7 @@ async def test_telnet_server_on_environ(
     # exercise,
     writer.write(IAC + WILL + NEW_ENVIRON)
     writer.write(IAC + SB + NEW_ENVIRON + IS +
-                 asynctelnet.stream_writer._encode_env_buf({
+                 asynctelnet.stream._encode_env_buf({
                      # note how the default implementation .upper() cases
                      # all environment keys.
                      'aLpHa': 'oMeGa',
