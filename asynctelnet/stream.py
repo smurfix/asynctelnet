@@ -151,7 +151,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     def __init__(self, stream: anyio.abc.ByteStream, *,
             log=None, force_binary=False, encoding=None,
-            encoding_errors="replace"):
+            encoding_errors="replace", client=False, server=False):
         """
         A wrapper for the telnet protocol. Telnet IAC Interpreter.
 
@@ -166,6 +166,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._orig_stream = stream
         self.log = log or logging.getLogger(__name__)
         self.force_binary = force_binary
+
+        if client == server:
+            raise TypeError("You must set either `client` or `server`.")
+        self._server = server
 
         #_ receiver callbacks/queues for subnegotiation messages
         self._subneg_recv = {}
@@ -184,6 +188,19 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         self._charset = encoding
         self._charset_errors = encoding_errors
+
+    # Public methods for notifying about, or soliciting state options.
+    #
+    @property
+    def server(self):
+        """Whether this stream is from the server's point of view."""
+        return bool(self._server)
+
+    @property
+    def client(self):
+        """Whether this stream is from the client's point of view."""
+        return bool(not self._server)
+
 
     def set_command_handler(self,cmd:Cmd,opt:Opt,callback):
         if (cmd,opt) in self._handler:
@@ -289,7 +306,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         val = self._remote_option.get(option, None)
         if value is not None and isinstance(val, anyio.abc.Event):
-            raise InProgressError(WILL,option)
+            raise InProgressError(DO,option)
 #       while isinstance(val, anyio.abc.Event):
 #           await val.wait()
 #           val = self._remote_option[option]
@@ -327,11 +344,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Called when starting this connection.
         """
-        if self.force_binary:
-            await self._tg.spawn(self.local_option,BINARY,True)
-            await self._tg.spawn(self.remote_option,BINARY,True)
-        if self._charset is not None:
-            await self._tg.spawn(self.request_charset,self._charset)
+        async with anyio.create_task_group() as tg:
+            if self.force_binary:
+                await tg.spawn(self.local_option,BINARY,True)
+                await tg.spawn(self.remote_option,BINARY,True)
+        await self.request_charset(self._charset)
 
     async def teardown(self):
         """
@@ -427,7 +444,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         Read one line, decoding as appropriate.
         """
         while True:
-            chunk = await self._readline(max_bytes)
+            chunk = await self._readline()
             if isinstance(chunk, RecvMessage):
                 return chunk
             if self._decoder is None:
@@ -477,9 +494,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     self._buffer = res
                     return buf
             for i,inp in enumerate(buf):
-                if not await self.feed(inp):
-                    continue
-
                 if inp in (LF, NUL) and self._last_input == CR:
                     self._buffer = buf[i+1:]
                     return res
@@ -502,13 +516,14 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     # buffer and echo input
                     res.append(inp)
                     self._last_input = inp
+            buf = b''
 
     async def _writeline(self, line: bytes):
         line += bytes((CR,LF))
         await self.send(line)
 
     async def writeline(self, line: str):
-        await self._writeline(self._encoder.encode(line))
+        await self._writeline(self._encoder(line))
 
     def set_encoder(self, charset: Optional[str], errors: str="replace"):
         """
@@ -1016,7 +1031,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             # remote doesn't want GA so don't send it
             return
             # if it's under negotiation, don't care, RFC says OK to send anyway
-        await self.send_command(cmd)
+        await self.send_iac(cmd)
 
 
 # Public methods for transmission signaling
@@ -1057,39 +1072,39 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         await self.send_command(Cmd.EOR)
         return True
 
-    async def send_nop(self, cmd):
+    async def send_nop(self):
         await self.send_command(NOP)
         return True
 
-    async def send_dm(self, cmd):
+    async def send_dm(self):
         await self.send_command(DM)
         return True
 
-    async def send_brk(self, cmd):
+    async def send_brk(self):
         await self.send_command(BRK)
         return True
 
-    async def send_ip(self, cmd):
+    async def send_ip(self):
         await self.send_command(IP)
         return True
 
-    async def send_ao(self, cmd):
+    async def send_ao(self):
         await self.send_command(AO)
         return True
 
-    async def send_ayt(self, cmd):
+    async def send_ayt(self):
         await self.send_command(AYT)
         return True
 
-    async def send_ec(self, cmd):
+    async def send_ec(self):
         await self.send_command(EC)
         return True
 
-    async def send_el(self, cmd):
+    async def send_el(self):
         await self.send_command(EL)
         return True
 
-    async def send_ga(self, cmd):
+    async def send_ga(self):
         await self.send_command(GA)
         return True
 
@@ -1140,10 +1155,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         one of character sets specified by string list ``codepages``, which
         is determined by function value returned by callback registered using
         :meth:`set_ext_send_callback` with value ``CHARSET``.
+
+        Limitation: there's no difference between input and output charset.
         """
         if not charsets:
             charsets = ("UTF-8","LATIN9","LATIN1","US-ASCII")
-        if not await self.remote_option(CHARSET, True):
+        # TODO
+        if not await (self.local_option if self.server else self.remote_option)(CHARSET, True):
             # Duh. Let's use it anyway.
             await self._set_charset(charsets[0])
             return False
@@ -1228,7 +1246,7 @@ class TelnetStream(BaseTelnetStream):
     default_linemode = slc.Linemode(slc.LMode_Mode.REMOTE | slc.LMode_Mode.LIT_ECHO)
 
 
-    def __init__(self, *a, client=False, server=False, **kw):
+    def __init__(self, *a, **kw):
         """
         Parameters in addition to those for `TelnetStream`:
 
@@ -1241,10 +1259,6 @@ class TelnetStream(BaseTelnetStream):
 
         This is an async context manager.
         """
-        if client == server:
-            raise TypeError("You must set either `client` or `server`.")
-        self._server = server
-
         super().__init__(*a,**kw)
 
         #: SLC buffer
@@ -1284,19 +1298,6 @@ class TelnetStream(BaseTelnetStream):
         #: Whether flow control is enabled.
         await super().reset()
         lflow = True
-
-    # Public methods for notifying about, or soliciting state options.
-    #
-    @property
-    def server(self):
-        """Whether this stream is from the server's point of view."""
-        return bool(self._server)
-
-    @property
-    def client(self):
-        """Whether this stream is from the client's point of view."""
-        return bool(not self._server)
-
 
     def _repr(self):
         info = super()._repr()

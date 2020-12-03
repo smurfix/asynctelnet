@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import logging
 import signal
+import anyio
 from weakref import proxy
 from contextlib import asynccontextmanager
 from functools import partial
@@ -26,11 +27,11 @@ __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
 
 CONFIG = collections.namedtuple('CONFIG', [
     'host', 'port', 'loglevel', 'logfile', 'logfmt', 'shell', 'encoding',
-    'force_binary', 'timeout', 'connect_maxwait'])(
+    'force_binary', 'timeout'])(
         host='localhost', port=6023, loglevel='info',
         logfile=None, logfmt=accessories._DEFAULT_LOGFMT ,
         shell=accessories.function_lookup('asynctelnet.telnet_server_shell'),
-        encoding='utf8', force_binary=False, timeout=300, connect_maxwait=4.0)
+        encoding='utf8', force_binary=False, timeout=300)
 
 
 class TelnetServer(server_base.BaseServer):
@@ -42,11 +43,9 @@ class TelnetServer(server_base.BaseServer):
 
     # Derived methods from base class
 
-    def __init__(self, term='unknown', cols=80, rows=25, timeout=300,
+    def __init__(self, stream, term='unknown', cols=80, rows=25, timeout=300,
                  *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.waiter_encoding = asyncio.Future()
-        self._tasks.append(self.waiter_encoding)
+        super().__init__(stream, *args, **kwargs)
         self._ttype_count = 1
         self._timer = None
         self._extra = {
@@ -71,115 +70,53 @@ class TelnetServer(server_base.BaseServer):
         await super().setup()
 
         # begin timeout timer
-        async with self.with_timeout():
+#       async with self.with_timeout():
 
-            # Wire extended rfc callbacks for responses to
-            # requests of terminal attributes, environment values, etc.
-            for tel_opt, callback_fn in [
-                (NAWS, self.on_naws),
-                (NEW_ENVIRON, self.on_environ),
-                (TSPEED, self.on_tspeed),
-                (TTYPE, self.on_ttype),
-                (XDISPLOC, self.on_xdisploc),
-                (CHARSET, self.on_charset),
-            ]:
-                self.writer.set_ext_callback(tel_opt, callback_fn)
+#           # Wire extended rfc callbacks for responses to
+#           # requests of terminal attributes, environment values, etc.
+#           for tel_opt, callback_fn in [
+#               (NAWS, self.on_naws),
+#               (NEW_ENVIRON, self.on_environ),
+#               (TSPEED, self.on_tspeed),
+#               (TTYPE, self.on_ttype),
+#               (XDISPLOC, self.on_xdisploc),
+#               (CHARSET, self.on_charset),
+#           ]:
+#               self.writer.set_ext_callback(tel_opt, callback_fn)
 
-            # Wire up a callbacks that return definitions for requests.
-            for tel_opt, callback_fn in [
-                (NEW_ENVIRON, self.on_request_environ),
-                (CHARSET, self.on_request_charset),
-            ]:
-                self.writer.set_ext_send_callback(tel_opt, callback_fn)
+#           # Wire up a callbacks that return definitions for requests.
+#           for tel_opt, callback_fn in [
+#               (NEW_ENVIRON, self.on_request_environ),
+#               (CHARSET, self.on_request_charset),
+#           ]:
+#               self.writer.set_ext_send_callback(tel_opt, callback_fn)
 
-        from .telopt import DO, WILL, TTYPE
-        super().begin_negotiation()
-        self.iac(DO, TTYPE)
-        await self.wait_for(WILL, TTYPE)
 
-        from .telopt import (DO, WILL, SGA, ECHO, BINARY,
+        from .telopt import (DO, WILL, SGA, ECHO, BINARY, TTYPE, 
                              NEW_ENVIRON, NAWS, CHARSET)
-        super().begin_advanced_negotiation()
-        self.writer.iac(WILL, SGA)
-        self.writer.iac(WILL, ECHO)
-        self.writer.iac(WILL, BINARY)
-        self.writer.iac(DO, NEW_ENVIRON)
-        self.writer.iac(DO, NAWS)
-        if self.default_encoding:
-            self.writer.iac(DO, CHARSET)
+        # No terminal? don't try.
+        if await self.remote_option(TTYPE, True):
+            async with anyio.create_task_group() as tg:
+                await tg.spawn(self.local_option,SGA,True)
+                await tg.spawn(self.local_option,ECHO,True)
+                await tg.spawn(self.local_option,BINARY,True)
+                await tg.spawn(self.remote_option,NEW_ENVIRON,True)
+                await tg.spawn(self.remote_option,NAWS,True)
+                await tg.spawn(self.remote_option,BINARY,True)
+                await tg.spawn(self.request_charset("UTF-8"))
 
-    def check_negotiation(self, final=False):
-        from .telopt import TTYPE
-        parent = super().check_negotiation()
+        # TODO request environment
 
-        # in addition to the base class negotiation check, periodically check
-        # for completion of bidirectional encoding negotiation.
-        result = self._check_encoding()
-        encoding = self.encoding(outgoing=True, incoming=True)
-        if not self.waiter_encoding.done() and result:
-            self.log.debug('encoding complete: {0!r}'.format(encoding))
-            self.waiter_encoding.set_result(proxy(self))
+        # prefer 'LANG' environment variable forwarded by client, if any.
+        # for modern systems, this is the preferred method of encoding
+        # negotiation.
+        #_lang = self.get_extra_info('LANG', '')
+        #if _lang:
+        #    return accessories.encoding_from_lang(_lang)
 
-        elif (not self.waiter_encoding.done() and
-              self.writer.remote_option.get(TTYPE) is False):
-            # if the remote end doesn't support TTYPE, which is agreed upon
-            # to continue towards advanced negotiation of CHARSET, we assume
-            # the distant end would not support it, declaring encoding failed.
-            self.log.debug('encoding failed after {0:1.2f}s: {1}'
-                           .format(self.duration, encoding))
-            self.waiter_encoding.set_result(proxy(self))
-            return parent
-
-        elif not self.waiter_encoding.done() and final:
-            self.log.debug('encoding failed after {0:1.2f}s: {1}'
-                           .format(self.duration, encoding))
-            self.waiter_encoding.set_result(proxy(self))
-            return parent
-
-        return parent and result
-
-    # new methods
-
-    def encoding(self, outgoing=None, incoming=None):
-        """
-        Return encoding for the given stream direction.
-
-        :param bool outgoing: Whether the return value is suitable for
-            encoding bytes for transmission to client end.
-        :param bool incoming: Whether the return value is suitable for
-            decoding bytes received from the client.
-        :raises TypeError: when a direction argument, either ``outgoing``
-            or ``incoming``, was not set ``True``.
-        :returns: ``'US-ASCII'`` for the directions indicated, unless
-            ``BINARY`` :rfc:`856` has been negotiated for the direction
-            indicated or :attr`force_binary` is set ``True``.
-        :rtype: str
-        """
-        if not (outgoing or incoming):
-            raise TypeError("encoding arguments 'outgoing' and 'incoming' "
-                            "are required: toggle at least one.")
-
-        # may we encode in the direction indicated?
-        _outgoing_only = outgoing and not incoming
-        _incoming_only = not outgoing and incoming
-        _bidirectional = outgoing and incoming
-        may_encode = ((_outgoing_only and self.writer.outbinary) or
-                      (_incoming_only and self.writer.inbinary) or
-                      (_bidirectional and
-                       self.writer.outbinary and self.writer.inbinary))
-
-        if self.force_binary or may_encode:
-            # prefer 'LANG' environment variable forwarded by client, if any.
-            # for modern systems, this is the preferred method of encoding
-            # negotiation.
-            _lang = self.get_extra_info('LANG', '')
-            if _lang:
-                return accessories.encoding_from_lang(_lang)
-
-            # otherwise, the less CHARSET negotiation may be found in many
-            # East-Asia BBS and Western MUD systems.
-            return self.get_extra_info('charset') or self.default_encoding
-        return 'US-ASCII'
+        # otherwise, the less CHARSET negotiation may be found in many
+        # East-Asia BBS and Western MUD systems.
+        #return self.get_extra_info('charset') or self.default_encoding
 
     @asynccontextmanager
     async def with_timeout(self, duration=-1):
@@ -340,22 +277,8 @@ class TelnetServer(server_base.BaseServer):
         """Callback for XDISPLOC response, :rfc:`1096`."""
         self._extra['xdisploc'] = xdisploc
 
-    # private methods
 
-    def _check_encoding(self):
-        # Periodically check for completion of ``waiter_encoding``.
-        from .telopt import DO, BINARY
-        if (self.writer.outbinary and not self.writer.inbinary and
-                not DO + BINARY in self.writer.pending_option):
-            self.log.debug('BINARY in: direction request.')
-            self.writer.iac(DO, BINARY)
-            return False
-
-        # are we able to negotiation BINARY bidirectionally?
-        return self.writer.outbinary and self.writer.inbinary
-
-
-async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=None, **kwds):
+async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=None, log=None, **kwds):
     """
     Run a TCP Telnet server.
 
@@ -401,14 +324,17 @@ async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=N
     This method does not return until cancelled.
     """
     protocol_factory = protocol_factory or TelnetServer
-    l = await create_tcp_listener(local_host=host, local_port=port)
+    l = await anyio.create_tcp_listener(local_host=host, local_port=port)
     if shell is None:
         async def shell(_s):
             while True:
                 await anyio.sleep(99999)
     async def serve(s):
-        async with protocol_factory(s, **kwds) as stream:
+        async with protocol_factory(s, log=log, **kwds) as stream:
             await shell(stream)
+
+    if log is not None:
+        log.info('Server ready on {0}:{1}'.format(host, port))
     await l.serve(serve)
 
 
@@ -444,9 +370,9 @@ def parse_server_args():
                         help='force binary transmission')
     parser.add_argument('--timeout', default=CONFIG.timeout,
                         help='idle disconnect (0 disables)')
-    parser.add_argument('--connect-maxwait', type=float,
-                        default=CONFIG.connect_maxwait,
-                        help='timeout for pending negotiation')
+#   parser.add_argument('--connect-maxwait', type=float,
+#                       default=CONFIG.connect_maxwait,
+#                       help='timeout for pending negotiation')
     return vars(parser.parse_args())
 
 
@@ -454,7 +380,8 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
                logfile=CONFIG.logfile, logfmt=CONFIG.logfmt,
                shell=CONFIG.shell, encoding=CONFIG.encoding,
                force_binary=CONFIG.force_binary, timeout=CONFIG.timeout,
-               connect_maxwait=CONFIG.connect_maxwait):
+#              connect_maxwait=CONFIG.connect_maxwait
+                ):
     """
     Program entry point for server daemon.
 
@@ -462,16 +389,16 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
     given keyword arguments, serving forever, completing only upon receipt of
     SIGTERM.
     """
+    log = accessories.make_logger(
+        name=__name__,
+        loglevel=loglevel,
+        logfile=logfile,
+        logfmt=logfmt)
+
     anyio.run(partial(
-        create_server, host, port, shell=shell, encoding=encoding,
-                      force_binary=force_binary, timeout=timeout,
-                      connect_maxwait=connect_maxwait))
+        server_loop, host, port, shell=shell, encoding=encoding,
+                      force_binary=force_binary, timeout=timeout, log=log))
 
-    # SIGTERM cases server to gracefully stop
-    loop.add_signal_handler(signal.SIGTERM, asyncio.ensure_future,
-                            _sigterm_handler(server, log))
-
-    log.info('Server ready on {0}:{1}'.format(host, port))
 
     # await completion of server stop
     try:
