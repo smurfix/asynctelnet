@@ -3,10 +3,11 @@
 import pkg_resources
 import importlib
 import logging
+import outcome
 import anyio
 
 __all__ = ('encoding_from_lang', 'name_unicode', 'eightbits', 'make_logger',
-           'repr_mapping', 'function_lookup', 'CtxObj', 'spawn')
+           'repr_mapping', 'function_lookup', 'CtxObj', 'spawn', 'ValueEvent')
 
 
 def get_version():
@@ -138,4 +139,57 @@ async def spawn(tg, proc,*args, _name=None, **kwargs):
     await tg.spawn(_spawn, evt, proc,args,kwargs, name=_name)
     await evt.wait()
     return sc
+
+class ValueEvent:
+    """A waitable value useful for inter-task synchronization,
+    inspired by :class:`threading.Event`.
+
+    An event object manages an internal value, which is initially
+    unset, and a task can wait for it to become True.
+
+    Note that the value can only be read once.
+    """
+
+    event = None
+    value = None
+
+    def __init__(self):
+        self.event = anyio-create_event()
+
+    async def set(self, value):
+        """Set the result to return this value, and wake any waiting task.
+        """
+        assert not self.event.is_set(), self
+        self.value = outcome.Value(value)
+        await self.event.set()
+
+    async def set_error(self, exc):
+        """Set the result to raise this exceptio, and wake any waiting task.
+        """
+        assert not self.event.is_set(), self
+        self.value = outcome.Error(exc)
+        await self.event.set()
+
+    def is_set(self):
+        """Check whether the event has occurred.
+        """
+        return self.value is not None
+
+    async def get(self):
+        """Block until the value is set.
+
+        If it's already set, then this method returns immediately.
+
+        The value can only be read once.
+        """
+        await self.event.wait()
+        return self.value.unwrap()
+
+    async def wait(self):
+        """
+        Block until the value is set.
+
+        This does not retrieve the value and is meant for locks and similar helpers.
+        """
+        await self.event.wait()
 

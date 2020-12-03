@@ -293,6 +293,7 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
     :param bool force_binary: When ``True``, the encoding specified is used for
         both directions even when failing ``BINARY`` negotiation, :rfc:`856`.
         This parameter has no effect when ``encoding=False``.
+    :param str encoding: Character encoding to use. The default is ``utf-8``.
     :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
     :param float connect_maxwait: If the remote end is not compliant, or
         otherwise confused by our demands, the shell continues anyway after the

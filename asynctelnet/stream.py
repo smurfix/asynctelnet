@@ -10,6 +10,8 @@ from enum import Enum, IntEnum
 from typing import Optional,Union,Iterator,Tuple,Mapping
 from contextlib import asynccontextmanager
 from functools import partial
+from dataclasses import dataclass
+from collections import defaultdict
 
 # local imports
 from . import slc
@@ -22,12 +24,15 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar)
-from .accessories import CtxObj, spawn
+from .accessories import CtxObj, spawn, ValueEvent
+
+# list of IAC commands needing 3+ bytes
+_iac_multibyte = {DO, DONT, WILL, WONT, SB}
 
 class TS(Enum):
     DATA="data"  # normal data flow
     IAC="iac"  # IAC
-    OPT="opt"  # IAC+multibyte
+    OPT="opt"  # IAC+multibyte (cmd in _iac_multibyte)
     SUBNEG="subneg"  # IAC+SB+OPT
     SUBIAC="subiac"  # IAC+SB+OPT+…+IAC
 
@@ -39,9 +44,6 @@ EchoAttr = anyio.typed_attribute()
 
 CR, LF, NUL = b'\r\n\x00'
 bIAC = bytes([IAC])
-
-# list of IAC commands needing 3+ bytes (mbs: multibyte sequence)
-_iac_mbs = {DO, DONT, WILL, WONT, SB}
 
 
 class InProgressError(RuntimeError):
@@ -95,9 +97,20 @@ class RecvMessage:
     """
     pass
 
+@dataclass
+class SetCharset(RecvMessage):
+    charset: str
+
 class NullDecoder:
     @staticmethod
     def decode(x):
+        return x
+
+class NullEncoder:
+    @staticmethod
+    def __call__(x):
+        if isinstance(x,str):
+            x = x.encode("utf-8")
         return x
 
 class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
@@ -130,10 +143,15 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     _read_callback = None
 
     _decoder = NullDecoder()
-    _encoder = lambda x:x
+    _encoder = NullEncoder()
+    _charset = None
+    _charset_lock = None
+
+    _did_binary = False
 
     def __init__(self, stream: anyio.abc.ByteStream, *,
-            log=None, force_binary=False):
+            log=None, force_binary=False, encoding=None,
+            encoding_errors="replace"):
         """
         A wrapper for the telnet protocol. Telnet IAC Interpreter.
 
@@ -147,6 +165,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._stream = stream
         self._orig_stream = stream
         self.log = log or logging.getLogger(__name__)
+        self.force_binary = force_binary
 
         #_ receiver callbacks/queues for subnegotiation messages
         self._subneg_recv = {}
@@ -156,6 +175,22 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         # write lock
         self._write_lock = anyio.create_lock()
+
+        # handler registry
+        self._handler = {}
+
+        # Locks for preventing concurrent subnegotiations
+        self._subneg_lock = defaultdict(anyio.create_lock)
+
+        self._charset = encoding
+        self._charset_errors = encoding_errors
+
+    def set_command_handler(self,cmd:Cmd,opt:Opt,callback):
+        if (cmd,opt) in self._handler:
+            ofn = self._handler[(cmd,opt)]
+            self.log.warning("Command for %s/%s was %r, replaced with %r" % (cmd.name,opt.name, ofn,callback))
+
+        self._handler[(cmd,opt)] = callback
 
     async def reset(self):
         #: Dictionary of telnet option byte(s) that follow an
@@ -230,7 +265,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             self._local_option[option] = evt
             await self.send_iac(WILL if value else WONT, option)
             await evt.wait()
-            while isinstance(val := self._remote_option[option], anyio.abc.Event):
+            while isinstance(val := self._local_option.get(option), anyio.abc.Event):
                 await val.wait()
         return val
 
@@ -270,7 +305,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 await val.wait()
         return val
 
-
     @asynccontextmanager
     async def _ctx(self):
         # Set default callback handlers to local methods.  A base protocol
@@ -293,7 +327,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Called when starting this connection.
         """
-        pass
+        if self.force_binary:
+            await self._tg.spawn(self.local_option,BINARY,True)
+            await self._tg.spawn(self.remote_option,BINARY,True)
+        if self._charset is not None:
+            await self._tg.spawn(self.request_charset,self._charset)
 
     async def teardown(self):
         """
@@ -328,7 +366,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 self.log.debug("IN: EOF")
                 await q.aclose()
                 return
-            self.log.debug("IN: DATA: %r", b)
+            # self.log.debug("IN: DATA: %r", b)
             for x in b:
                 res = await self.feed_byte(x)
                 if res is True:
@@ -336,14 +374,14 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 if self._read_callback is not None:
                     cb,self._read_callback = self._read_callback,None
                     if buf:
-                        self.log.debug("IN: Q1: %r", buf)
+                        # self.log.debug("IN: Q1: %r", buf)
                         await q.send(buf)
                         buf = bytearray()
-                    self.log.debug("IN: Q3: %r", cb)
+                    # self.log.debug("IN: Q3: %r", cb)
                     await q.send(cb)
                     await cb.wait()
             if buf:
-                self.log.debug("IN: Q2: %r", buf)
+                # self.log.debug("IN: Q2: %r", buf)
                 await q.send(buf)
 
     def queue_read_callback(self, callback: ReadCallback):
@@ -372,6 +410,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     async def receive(self, max_bytes=4096) -> Union[str,bytes,RecvMessage]:
         while True:
             chunk = await self._receive(max_bytes)
+            if isinstance(chunk, SetCharset):
+                self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
+                continue
+
             if not isinstance(chunk, (bytes,bytearray)):
                 return chunk
             if self._decoder is None:
@@ -476,7 +518,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         i.e. within the write lock.
         """
         if charset is None:
-            self._encoder = lambda x: x
+            self._encoder = NullEncoder()
         else:
             self._encoder = lambda x: x.encode(encoding=charset, errors=errors)
 
@@ -492,8 +534,23 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 if charset is None:
                     self._decoder = NullDecoder()
                 else:
-                    self._decoder = codecs.getincrementaldecoder(charset)(errors=errors)
+                    self._decoder = codecs.getincrementaldecoder(charset)(errors=self._charset_errors)
 
+
+    async def handle_do_binary(self):
+        return True
+
+    async def handle_dont_binary(self):
+        return self.force_binary
+
+    async def handle_will_binary(self):
+        return True
+
+    async def handle_wont_binary(self):
+        if seld._did_binary:
+            return False
+        self._did_binary = True
+        return self.force_binary
 
 # public derivable methods DO, DONT, WILL, and WONT negotiation
 #
@@ -554,7 +611,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if isinstance(buf, str):
             if not escape_iac:
                 raise ValueError("Raw sending is only possible for bytes")
-            buf = self._encode(buf)
+            buf = self._encoder(buf)
 
         if escape_iac:
             # when escape_iac is True, we may safely assume downstream
@@ -639,8 +696,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             if byte == IAC:
                 self._recv_state = TS.DATA
                 return True
-            elif byte in _iac_mbs:
-                self._recv_cmd = byte
+            elif byte in _iac_multibyte:
+                self._recv_cmd = Cmd(byte)
                 self._recv_state = TS.OPT
                 return False
             else:
@@ -658,7 +715,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         elif self._recv_state == TS.OPT:
             if self._recv_cmd == SB:
-                self._recv_cmd = byte
+                self._recv_cmd = Opt(byte)
                 self._recv_state = TS.SUBNEG
                 self._recv_sb_buffer = bytearray()
             else:
@@ -668,7 +725,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         elif self._recv_state == TS.SUBNEG:
             if byte == IAC:
-                self._recv_state == TS.SUBIAC
+                self._recv_state = TS.SUBIAC
             else:
                 self._recv_sb_buffer.append(byte)
             return False
@@ -679,19 +736,19 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             elif byte == SE:
                 self._recv_state = TS.DATA
                 try:
-                    await self.handle_subneg(opt, self._sb_buffer)
+                    await self.handle_subneg(self._recv_cmd, self._recv_sb_buffer)
                 finally:
-                    self._sb_buffer.clear()
+                    self._recv_sb_buffer.clear()
             else:
                 # The standard says to just ignore the IAC but it's better
                 # to treat this as if the sender forgot the IAC+SE.
                 self.log.warning("recv: protocol error: IAC SB %s <%d> IAC %s: no IAC+SE?",
-                        name_command(self._recv_cmd), len(self._sb_buffer), name_command(byte))
+                        self._recv_cmd.name, len(self._recv_sb_buffer), name_command(byte))
                 self._recv_state = TS.IAC
                 try:
-                    await self.handle_subneg(opt, self._sb_buffer)
+                    await self.handle_subneg(self._recv_cmd, self._recv_sb_buffer)
                 finally:
-                    self._sb_buffer.clear()
+                    self._recv_sb_buffer.clear()
                 await self.flow_byte(byte)
 
         else:
@@ -701,25 +758,22 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     async def _recv_opt(self,cmd,opt):
         opt = Opt(opt)
         self.log.debug('recv IAC %s %s', Cmd(cmd).name, opt.name)
+        handler = self._get_handler(cmd,opt)
         if cmd == DO:
             opts = self._local_option
             val = True
-            handler = self._get_handler_DO(opt)
             reply = (WONT,WILL)
         elif cmd == DONT:
             opts = self._local_option
             val = False
-            handler = self._get_handler_DONT(opt)
             reply = (WONT,WILL)
         elif cmd == WILL:
             opts = self._remote_option
             val = True
-            handler = self._get_handler_WILL(opt)
             reply = (DONT,DO)
         elif cmd == WONT:
             opts = self._remote_option
             val = False
-            handler = self._get_handler_WONT(opt)
             reply = (DONT,DO)
         else:
             raise RuntimeError("? received %r" % cmd)
@@ -743,41 +797,21 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 await self.send_iac(reply[val], opt)
 
 
-    def _get_handler_DO(self, opt):
-        try:
-            return getattr(self, 'handle_do_'+name_command(opt))
-        except AttributeError:
-            try:
-                return partial(getattr(self, 'handle_'+name_command(opt)),DO)
-            except AttributeError:
-                return partial(self.handle_do,opt)
+    def _get_handler(self, cmd, opt):
+        cmdn = cmd.name.lower()
+        optn = opt.name.lower()
 
-    def _get_handler_DONT(self, opt):
-        try:
-            return getattr(self, 'handle_dont_'+name_command(opt))
-        except AttributeError:
-            try:
-                return partial(getattr(self, 'handle_'+name_command(opt)),DONT)
-            except AttributeError:
-                return partial(self.handle_dont,opt)
+        hdl = self._handler.get((cmd,opt),None)
+        if hdl is not None:
+            return hdl
+        hdl = getattr(self, 'handle_%s_%s'%(cmdn,optn), None)
+        if hdl is not None:
+            return hdl
+        hdl = getattr(self, 'handle_'+optn, None)
+        if hdl is not None:
+            return partial(hdl,cmd)
+        return partial(getattr(self,'handle_'+cmdn),opt)
 
-    def _get_handler_WILL(self, opt):
-        try:
-            return getattr(self, 'handle_will_'+name_command(opt))
-        except AttributeError:
-            try:
-                return partial(getattr(self, 'handle_'+name_command(opt)),WILL)
-            except AttributeError:
-                return partial(self.handle_will,opt)
-
-    def _get_handler_WONT(self, opt):
-        try:
-            return getattr(self, 'handle_wont_'+name_command(opt))
-        except AttributeError:
-            try:
-                return partial(getattr(self, 'handle_'+name_command(opt)),WONT)
-            except AttributeError:
-                return partial(self.handle_wont,opt)
 
     # Our protocol methods
 
@@ -882,8 +916,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Send a subnegotiation.
         """
-        opt = self._to_cmd(opt)
-        assert isinstance(buf, (bytes, bytearray)), buf
+        opt = Opt(opt)
         buf = self._escape_iac(b''.join(bytes([b]) if isinstance(b,int) else b
             for b in bufs))
         await self.send(bytes([IAC,SB,opt])+buf+bytes([IAC,SE]), escape_iac=False)
@@ -1061,6 +1094,120 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         return True
 
 
+    # charset handling
+    # included in basic code because necessary
+
+    async def handle_do_charset(self):
+        return self._charset is not None
+
+    async def handle_will_charset(self):
+        return self._charset is not None
+
+    def select_charset(self, offers):
+        """
+        Select a charset from those offered by the other side.
+        Default: use the first for which we have an incremental decoder.
+        """
+        for c in offers:
+            try:
+                codecs.getincrementaldecoder(c)
+            except LookupError:
+                continue
+            else:
+                return c
+        self.log.warning("Charsets: no idea what to do with %r", offers)
+        return None
+
+    async def _set_charset(self, charset):
+        """
+        Completed charset subnegotiation.
+        Queues a callback to set the decoder in-line.
+        """
+        self._encoder = lambda x: x.encode(encoding=charset, errors="replace")
+        self.queue_recv_message(SetCharset(charset))
+        self._charset = charset
+        if self._charset_lock is not None:
+            lock,self._charset_lock = self._charset_lock,None
+            await lock.set(charset)
+
+    async def request_charset(self, *charsets):
+        """
+        Request sub-negotiation CHARSET, :rfc:`2066`.
+
+        Returns True if request is valid for telnet state, and was sent.
+
+        The sender requests that all text sent to and by it be encoded in
+        one of character sets specified by string list ``codepages``, which
+        is determined by function value returned by callback registered using
+        :meth:`set_ext_send_callback` with value ``CHARSET``.
+        """
+        if not charsets:
+            charsets = ("UTF-8","LATIN9","LATIN1","US-ASCII")
+        if not await self.remote_option(CHARSET, True):
+            # Duh. Let's use it anyway.
+            await self._set_charset(charsets[0])
+            return False
+
+        async with self._subneg_lock[opt]:
+            assert set
+            if self._charset == charsets[0]:
+                return True
+            self._charset_lock = ValueEvent()
+
+            await self.send_iac(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
+            await self._charset_lock.wait()
+
+        codepages = await self._ext_send_callback[CHARSET]()
+
+        sep = ' '
+        response = bytearray([REQUEST])
+        response.extend([bytes(sep, 'ascii')])
+        response.extend([bytes(sep.join(codepages), 'ascii')])
+        self.log.debug('send IAC SB CHARSET REQUEST {} IAC SE'.format(
+            sep.join(codepages)))
+        await self.send_subneg(CHARSET,b''.join(response))
+        return True
+
+
+    async def handle_subneg_charset(self, buf):
+        opt,buf = buf[0],buf[1:]
+        if opt == REQUEST:
+            if self._charset_lock is not None and self.server:
+                # NACK this
+                await self.send_sb(CHARSET,REJECTED)
+                return
+            if buf.startswith(b'TTABLE '):
+                buf = buf[8:]  # ignore TTABLE_V
+            sep,buf = buf[0:1],buf[1:]
+            offers = [charset.decode('ascii') for charset in buf.split(sep)]
+            selected = self.select_charset(offers)
+
+            if selected is None:
+                self.log.debug('send IAC SB CHARSET REJECTED IAC SE')
+                await self.send_subneg(CHARSET, REJECTED)
+                await self._set_charset(None)
+            else:
+                self.log.debug('send IAC SB CHARSET ACCEPTED %r IAC SE',selected)
+                await self.send_subneg(CHARSET, ACCEPTED, selected.encode('ascii'))
+                await self._set_charset(selected)
+
+        elif opt == ACCEPTED:
+            charset = buf.decode('ascii')
+            self.log.debug('recv IAC SB CHARSET ACCEPTED %r IAC SE', charset)
+            await self._set_charset(charset)
+
+        elif opt == REJECTED:
+            self.log.warning('recv IAC SB CHARSET REJECTED IAC SE')
+            if self._charset_lock is not None:
+                await self._set_charset(None)
+            # otherwise there's been an overlap and we should already have
+            # sent an ACCEPTED
+        else:
+            self.log.warning("SB CHARSET TTABLE (or other nonsense): %r %r", opt, buf)
+            self._local_option[CHARSET] = False
+            self._remote_option[CHARSET] = False
+
+
 class TelnetStream(BaseTelnetStream):
     """
     The "real" part of a Telnet implementation
@@ -1094,7 +1241,7 @@ class TelnetStream(BaseTelnetStream):
 
         This is an async context manager.
         """
-        if client != server:
+        if client == server:
             raise TypeError("You must set either `client` or `server`.")
         self._server = server
 
@@ -1120,18 +1267,18 @@ class TelnetStream(BaseTelnetStream):
 
         # fetch data to send as subneg on incoming WILL
         self._ext_send_callback = {}
-        for ext_cmd, key in (
-                (TTYPE, 'ttype'), (TSPEED, 'tspeed'), (XDISPLOC, 'xdisploc'),
-                (NAWS, 'naws'), (SNDLOC, 'sndloc')):
-            self.set_ext_send_callback(
-                cmd=ext_cmd, func=getattr(self, 'handle_send_{}'.format(key)))
+#       for ext_cmd, key in (
+#               (TTYPE, 'ttype'), (TSPEED, 'tspeed'), (XDISPLOC, 'xdisploc'),
+#               (NAWS, 'naws'), (SNDLOC, 'sndloc')):
+#           self.set_ext_send_callback(
+#               cmd=ext_cmd, func=getattr(self, 'handle_send_{}'.format(key)))
 
-        for ext_cmd, key in (
-                (CHARSET, 'charset'), (NEW_ENVIRON, 'environ')):
-            _cbname = ('handle_send_server_' if self.server else
-                       'handle_send_client_')
-            self.set_ext_send_callback(
-                cmd=ext_cmd, func=getattr(self, _cbname + key))
+#       for ext_cmd, key in (
+#               (CHARSET, 'charset'), (NEW_ENVIRON, 'environ')):
+#           _cbname = ('handle_send_server_' if self.server else
+#                      'handle_send_client_')
+#           self.set_ext_send_callback(
+#               cmd=ext_cmd, func=getattr(self, _cbname + key))
 
     async def reset(self):
         #: Whether flow control is enabled.
@@ -1262,37 +1409,6 @@ class TelnetStream(BaseTelnetStream):
         else:
             self.log.debug('cannot send SB TSPEED SEND, request pending.')
         return False
-
-    async def request_charset(self):
-        """
-        Request sub-negotiation CHARSET, :rfc:`2066`.
-
-        Returns True if request is valid for telnet state, and was sent.
-
-        The sender requests that all text sent to and by it be encoded in
-        one of character sets specified by string list ``codepages``, which
-        is determined by function value returned by callback registered using
-        :meth:`set_ext_send_callback` with value ``CHARSET``.
-        """
-        if not self._remote_option.enabled(CHARSET):
-            self.log.debug('cannot send SB CHARSET REQUEST '
-                           'without receipt of WILL CHARSET')
-            return False
-
-        if self.pending_option.enabled(SB + CHARSET):
-            self.log.debug('cannot send SB CHARSET REQUEST, request pending.')
-            return False
-
-        codepages = await self._ext_send_callback[CHARSET]()
-
-        sep = ' '
-        response = bytearray([REQUEST])
-        response.extend([bytes(sep, 'ascii')])
-        response.extend([bytes(sep.join(codepages), 'ascii')])
-        self.log.debug('send IAC SB CHARSET REQUEST {} IAC SE'.format(
-            sep.join(codepages)))
-        await self.send_subneg(CHARSET,b''.join(response))
-        return True
 
     async def request_environ(self):
         """
@@ -1468,7 +1584,7 @@ class TelnetStream(BaseTelnetStream):
             by evaluating this argument.
         """
         assert callable(func), ('Argument func must be callable')
-        assert isinstance(slc_byte, int) and 0 < slc_byte <= slc.NSLC, ('Unknown SLC byte: {!r}'.format(slc_byte))
+        assert isinstance(slc_byte, int) and 0 < slc_byte < slc.NSLC, ('Unknown SLC byte: {!r}'.format(slc_byte))
         self._slc_callback[slc_byte] = func
 
     async def handle_ew(self, slc):
@@ -1535,7 +1651,7 @@ class TelnetStream(BaseTelnetStream):
               Subnegotiation, unless the return value is ``None``.
         """
         assert isinstance(cmd, int), cmd
-        assert callable(func), ('Argument func must be callable')
+        assert callable(func), 'Argument func must be callable'
         self._ext_send_callback[cmd] = func
 
     def set_ext_callback(self, cmd, func):
@@ -1575,10 +1691,10 @@ class TelnetStream(BaseTelnetStream):
           negotiated by client. :rfc:`2066`.
         """
         assert isinstance(cmd, int), cmd
-        assert callable(func), ('Argument func must be callable')
+        assert callable(func), 'Argument func must be callable'
         self._ext_callback[cmd] = func
 
-    async def handle_xdisploc(self, xdisploc):
+    async def handle_recv_xdisploc(self, xdisploc):
         """Receive XDISPLAY value ``xdisploc``, :rfc:`1096`."""
         #   xdisploc string format is '<host>:<dispnum>[.<screennum>]'.
         self.log.debug('X Display is {}'.format(xdisploc))
@@ -1589,7 +1705,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('X Display requested, sending empty string.')
         return ''
 
-    async def handle_sndloc(self, location):
+    async def handle_recv_sndloc(self, location):
         """Receive LOCATION value ``location``, :rfc:`779`."""
         self.log.debug('Location is {}'.format(location))
 
@@ -1598,7 +1714,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('Location requested, sending empty response.')
         return ''
 
-    async def handle_ttype(self, ttype):
+    async def handle_recv_ttype(self, ttype):
         """
         Receive TTYPE value ``ttype``, :rfc:`1091`.
 
@@ -1613,7 +1729,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('Terminal type requested, sending empty string.')
         return ''
 
-    async def handle_naws(self, width, height):
+    async def handle_recv_naws(self, width, height):
         """Receive window size ``width`` and ``height``, :rfc:`1073`."""
         self.log.debug('Terminal cols={}, rows={}'.format(width, height))
 
@@ -1622,7 +1738,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('Terminal size requested, sending 80x24.')
         return 80, 24
 
-    async def handle_environ(self, env):
+    async def handle_recv_environ(self, env):
         """Receive environment variables as dict, :rfc:`1572`."""
         self.log.debug('Environment values are {!r}'.format(env))
 
@@ -1642,7 +1758,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.debug('Environment values offered, requesting [].')
         return []
 
-    async def handle_tspeed(self, rx, tx):
+    async def handle_recv_tspeed(self, rx, tx):
         """Receive terminal speed from TSPEED as int, :rfc:`1079`."""
         self.log.debug('Terminal Speed rx:{}, tx:{}'.format(rx, tx))
 
@@ -1651,26 +1767,26 @@ class TelnetStream(BaseTelnetStream):
         self.log.debug('Terminal Speed requested, sending 9600,9600.')
         return 9600, 9600
 
-    async def handle_charset(self, charset):
-        """Receive character set as string, :rfc:`2066`."""
-        self.log.debug('Character set: {}'.format(charset))
+#   async def handle_recv_charset(self, charset):
+#       """Receive character set as string, :rfc:`2066`."""
+#       self.log.debug('Character set: {}'.format(charset))
 
-    async def handle_send_client_charset(self, charsets):
-        """
-        Send character set selection as string, :rfc:`2066`.
+#   async def handle_send_client_charset(self, charsets):
+#       """
+#       Send character set selection as string, :rfc:`2066`.
 
-        Given the available encodings presented by the server, select and
-        return only one.  Returning an empty string indicates that no
-        selection is made (request is ignored).
-        """
-        assert not self.server
-        self.log.debug('Character Set requested')
-        return ''
+#       Given the available encodings presented by the server, select and
+#       return only one.  Returning an empty string indicates that no
+#       selection is made (request is ignored).
+#       """
+#       assert not self.server
+#       self.log.debug('Character Set requested')
+#       return ''
 
-    async def handle_send_server_charset(self, charsets):
-        """Send character set (encodings) offered to client, :rfc:`2066`."""
-        assert self.server
-        return ['UTF-8']
+#   async def handle_send_server_charset(self, charsets):
+#       """Send character set (encodings) offered to client, :rfc:`2066`."""
+#       assert self.server
+#       return ['UTF-8']
 
     async def handle_logout(self, cmd):
         """
@@ -1696,48 +1812,6 @@ class TelnetStream(BaseTelnetStream):
         elif cmd == WONT:
             assert self.client, (cmd, LOGOUT)
             self.log.debug('recv IAC WONT LOGOUT (server refuses logout')
-
-    # Sub-negotiation (SB) routines
-
-    async def handle_do_charset(self):
-        return True
-
-    async def handle_will_charset(self):
-        return True
-
-    def select_charset(self, offers):
-        for cs in ():
-            if cs in offers:
-                return cs
-        self.log.warning("Charsets: no idea what to do with %r", offers)
-        return "ASCII"
-
-    async def handle_subneg_charset(self, buf):
-        opt,buf = buf[0],buf[1:]
-        if opt == REQUEST:
-            sep,buf = buf[0:1],buf[1:]
-            offers = [charset.decode('ascii') for charset in buf.split(sep)]
-            selected = await self.select_charset(offers)
-
-            if selected is None:
-                self.log.debug('send IAC SB CHARSET REJECTED IAC SE')
-                await self.send_subneg(CHARSET, REJECTED)
-            else:
-                response = bytearray([ACCEPTED])
-                response.extend([bytes(selected, 'ascii')])
-                self.log.debug('send IAC SB CHARSET ACCEPTED %r IAC SE',selected)
-                await self.send_subneg(CHARSET, response)
-        elif opt == ACCEPTED:
-            charset = b''.join(buf).decode('ascii')
-            self.log.debug('recv IAC SB CHARSET ACCEPTED %r IAC SE', charset)
-            await self._ext_callback[CHARSET](charset)
-        elif opt == REJECTED:
-            self.log.warning('recv IAC SB CHARSET REJECTED IAC SE')
-        elif opt in (TTABLE_IS, TTABLE_ACK, TTABLE_NAK, TTABLE_REJECTED):
-            raise NotImplementedError(f'Translation table command received '
-                                      'but not supported: {opt!r}')
-        else:
-            raise ValueError(f'Illegal option follows IAC SB CHARSET: {opt!r}.')
 
     async def handle_subneg_tspeed(self, buf):
         """Callback handles IAC-SB-TSPEED-<buf>-SE."""
@@ -2163,7 +2237,7 @@ class TelnetStream(BaseTelnetStream):
         """
         send_count = 0
         slctab = slctab or self.slctab
-        for func in range(slc.NSLC + 1):
+        for func in range(slc.NSLC):
             if func == 0 and self.client:
                 # only the server may send an octet with the first
                 # byte (func) set as 0 (SLC_NOSUPPORT).
@@ -2189,7 +2263,7 @@ class TelnetStream(BaseTelnetStream):
             slc_def = self.slctab[func]
         self.log.debug('_slc_add ({:<10} {})'.format(
             slc.name_slc_command(func) + ',', slc_def))
-        if len(self._slc_buffer) >= slc.NSLC * 6:
+        if len(self._slc_buffer) >= (slc.NSLC-1) * 6:
             raise ValueError('SLC: buffer full!')
         self._slc_buffer.extend([func, slc_def.mask, slc_def.val])
 
@@ -2206,7 +2280,7 @@ class TelnetStream(BaseTelnetStream):
         the default tabset, if indicated.
         """
         # out of bounds checking
-        if ord(func) > slc.NSLC:
+        if ord(func) >= slc.NSLC:
             self.log.warning('SLC not supported (out of range): ({!r})'
                              .format(func))
             self._slc_add(func, slc.NoSupport())

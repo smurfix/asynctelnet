@@ -2,6 +2,7 @@
 import collections
 import contextlib
 import logging
+import codecs
 import sys
 
 # local
@@ -22,6 +23,9 @@ import os
 import anyio
 import fcntl
 
+from .stream import ReadCallback
+from .telopt import WILL,WONT, ECHO
+
 class TerminalStream(anyio.abc.ByteStream):
     """
     Context manager that yields a non-blocking stdin+stdout stream.
@@ -39,12 +43,20 @@ class TerminalStream(anyio.abc.ByteStream):
         'mode', ['iflag', 'oflag', 'cflag', 'lflag',
                     'ispeed', 'ospeed', 'cc'])
 
-    def __init__(self, will_echo=True):
+    charset = "utf-8"
+    _decoder = codecs.getincrementaldecoder(charset)()
+    _encoder = "utf-8"
+    keyboard_escape = b'\x1d'
+
+    def __init__(self, will_echo=True, keyboard_escape=None):
         self._fileno = sys.stdin.fileno()
         self._istty = os.path.sameopenfile(0, 1)
         self._will_echo = will_echo
+        if keyboard_escape is not None:
+            self.keyboard_escape = keyboard_escape
 
-    def __enter__(self):
+    async def __aenter__(self):
+        await super().__aenter__()
         if self._istty:
             self._saved_mode = self._ModeDef(*termios.tcgetattr(self._fileno))
             self._set_mode()
@@ -52,8 +64,9 @@ class TerminalStream(anyio.abc.ByteStream):
             fcntl.fcntl(self._fileno, fcntl.F_SETFL, self._orig_fl | os.O_NONBLOCK)
         return self
 
-    def __exit__(self, *_):
+    async def __aexit__(self, *tb):
         self._close()
+        await super().__aexit__(*tb)
 
     def _close(self):
         if self._istty and self._orig_fl is not None:
@@ -79,7 +92,8 @@ class TerminalStream(anyio.abc.ByteStream):
     @will_echo.setter
     def will_echo(self, value):
         self._will_echo = value
-        self._set_mode()
+        if self._istty:
+            self._set_mode()
 
     def fileno(self):
         return self._fileno
@@ -137,12 +151,23 @@ class TerminalStream(anyio.abc.ByteStream):
             ispeed=mode.ispeed, ospeed=mode.ospeed, cc=cc)
 
     async def receive(self, max_bytes=1024):
-        await anyio.wait_socket_readable(self)
-        return os.read(self._fileno, max_bytes)
+        while True:
+            await anyio.wait_socket_readable(self)
+            inp = os.read(self._fileno, max_bytes)
+            if self.keyboard_escape in inp:
+                # on ^], close connection to remote host
+                raise EOFError
+            inp = self._decoder.decode(inp)
+            if inp:
+                return inp
 
     async def send(self, item):
-        await anyio.wait_socket_writable(self)
-        return os.write(self._fileno, item)
+        if isinstance(item,str):
+            item = item.encode(self.charset)
+        while len(item):
+            await anyio.wait_socket_writable(self)
+            done = os.write(self._fileno, item)
+            item = item[done:]
 
 
 async def telnet_client_shell(telnet_stream):
@@ -157,15 +182,32 @@ async def telnet_client_shell(telnet_stream):
     stdin or stdout may also be a pipe or file, behaving much like nc(1).
 
     """
-    keyboard_escape = b'\x1d'
+
+    class TerminalUpdater(ReadCallback):
+        def __init__(self,val):
+            super().__init__()
+            self.val=val
+        async def run(self):
+            term.will_echo = self.val
+
+    async def _handle_will_echo():
+        telnet_stream.queue_read_callback(TerminalUpdater(True))
+        return True
+
+    async def _handle_wont_echo():
+        telnet_stream.queue_read_callback(TerminalUpdater(False))
+        return False
 
     async with anyio.create_task_group() as tg, \
             TerminalStream(will_echo=telnet_stream.will_echo) as term :
+        telnet_stream.set_command_handler(WILL,ECHO, _handle_will_echo)
+        telnet_stream.set_command_handler(WONT,ECHO, _handle_wont_echo)
+
         linesep = '\n'
-        if term._istty and telnet_stream.will_echo:
+        if term._istty and term.will_echo:
             linesep = '\r\n'
         await term.send("Escape character is '{escape}'.{linesep}".format(
-            escape=accessories.name_unicode(keyboard_escape),
+            escape=accessories.name_unicode(term.keyboard_escape),
             linesep=linesep).encode())
 
         async def read_stdin():
@@ -173,26 +215,22 @@ async def telnet_client_shell(telnet_stream):
                 inp = await term.receive()
                 if not inp:
                     break
-                if keyboard_escape in inp:
-                    # on ^], close connection to remote host
-                    await term.write(
-                        f"\033[m{linesep}Connection closed.{linesep}".encode())
-                    await tg.cancel_scope.cancel()
-                    return
+                if inp:
+                    inp = inp.replace('\n','\r\n').replace('\r\r\n','\r\n')
                 await telnet_stream.send(inp)
 
         async def read_telnet():
             while True:
                 try:
                     out = await telnet_stream.receive()
-                    if out:
-                        await term.send(out)
                 except anyio.EndOfStream:
                     await term.send(f"\033[m{linesep}Connection closed by foreign host.{linesep}".encode())
                     await tg.cancel_scope.cancel()
                     return
                 except anyio.ClosedResourceError: 
                     return
+                else:
+                    await term.send(out)
 
         await tg.spawn(read_stdin)
         await tg.spawn(read_telnet)
