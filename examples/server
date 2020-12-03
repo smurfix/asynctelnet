@@ -1,0 +1,6 @@
+#!/usr/bin/python3
+
+# PYTHONPATH=. examples/server --shell examples.serve.serve
+
+from asynctelnet.server import main
+main()
