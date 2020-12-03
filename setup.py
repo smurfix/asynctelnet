@@ -15,6 +15,13 @@ def _get_long_description(fname, encoding='utf8'):
 
 setup(name='asynctelnet',
       # keep in sync w/docs/conf.py manually for now, please!
+      use_scm_version={
+          "version_scheme": "guess-next-dev",
+          "local_scheme": "dirty-tag"
+      },
+      setup_requires=[
+          "setuptools_scm",
+      ],
       url='http://asynctelnet.readthedocs.io/',
       license='ISC',
       author='Matthias Urlichs',
