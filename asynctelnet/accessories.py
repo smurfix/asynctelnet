@@ -154,7 +154,7 @@ class ValueEvent:
     value = None
 
     def __init__(self):
-        self.event = anyio-create_event()
+        self.event = anyio.create_event()
 
     async def set(self, value):
         """Set the result to return this value, and wake any waiting task.

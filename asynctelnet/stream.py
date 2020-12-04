@@ -73,7 +73,7 @@ class ReadCallback:
     async def _run(self):
         if self.prev is not None:
             await self.prev._run()
-        await self.run()
+        return await self.run()
     
     async def _set(self):
         if self.prev is not None:
@@ -82,7 +82,7 @@ class ReadCallback:
 
     async def __call__(self):
         try:
-            await self._run()
+            return await self._run()
         finally:
             await self._set()
 
@@ -329,8 +329,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         async with anyio.create_task_group() as tg:
             self._tg = tg
-            q, self._read_queue = anyio.create_memory_object_stream(100)
-            self._read_task = await spawn(tg,self._receive_loop, q)
+            self._write_queue, self._read_queue = anyio.create_memory_object_stream(100)
+            self._read_task = await spawn(tg,self._receive_loop)
 
             try:
                 await self.setup()
@@ -344,11 +344,12 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Called when starting this connection.
         """
-        async with anyio.create_task_group() as tg:
-            if self.force_binary:
+        if self.force_binary:
+            async with anyio.create_task_group() as tg:
                 await tg.spawn(self.local_option,BINARY,True)
                 await tg.spawn(self.remote_option,BINARY,True)
-        await self.request_charset(self._charset)
+        if self._charset:
+            await self.request_charset(self._charset)
 
     async def teardown(self):
         """
@@ -366,6 +367,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if not buf:
             while True:
                 buf = await self._read_queue.receive()
+                # self.log.debug("INB:%r",buf)
                 if isinstance(buf,(bytes,bytearray)):
                     break
                 data = await buf()
@@ -374,7 +376,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         buf,self._buffer = buf[:max_bytes],buf[max_bytes:]
         return buf
 
-    async def _receive_loop(self, q):
+    async def _receive_loop(self):
+        q = self._write_queue
         while True:
             buf = bytearray()
             try:
@@ -412,21 +415,24 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             callback.prev = self._read_callback
         self._read_callback = callback
 
-    def queue_recv_message(self, msg: RecvMessage):
+    async def queue_recv_message(self, msg: RecvMessage):
         """
         Queue a read callback that simply emits a RecvMessage.
         """
         class MQ(ReadCallback):
             def __init__(self, msg:str):
                 self.msg = msg
-            def run(self):
+                super().__init__()
+            async def run(self):
                 return msg
+        await self._write_queue.send(MQ(msg))
 
     # string methods, if a decoder is set
 
     async def receive(self, max_bytes=4096) -> Union[str,bytes,RecvMessage]:
         while True:
             chunk = await self._receive(max_bytes)
+            import pdb;pdb.set_trace()
             if isinstance(chunk, SetCharset):
                 self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
                 continue
@@ -445,6 +451,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         while True:
             chunk = await self._readline()
+            if isinstance(chunk, SetCharset):
+                self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
+                continue
             if isinstance(chunk, RecvMessage):
                 return chunk
             if self._decoder is None:
@@ -484,23 +493,23 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         """
 
-        buf = self._buffer
+        buf,self._buffer = self._buffer,b''
         res = bytearray()
 
         while True:
             if buf == b"":
                 buf = await self._receive()
                 if isinstance(buf, RecvMessage):
-                    self._buffer = res
+                    self._buffer = res+self._buffer
                     return buf
             for i,inp in enumerate(buf):
                 if inp in (LF, NUL) and self._last_input == CR:
-                    self._buffer = buf[i+1:]
+                    self._buffer = buf[i+1:]+self._buffer
                     return res
                 
                 elif inp in (CR, LF):
                     # first CR or LF yields res
-                    self._buffer = buf[i+1:]
+                    self._buffer = buf[i+1:]+self._buffer
                     await self.echo(res)
                     await self.echo(bytes((CR,LF)))
                     # TODO configure CRLF style
@@ -798,14 +807,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             nval = await handler()
             if isinstance(nval, bool):
                 opts[opt] = val = nval
-                opts[opt] = val = nval
         except BaseException:
             opts[opt] = None
             # Error. Reply with rejection.
             await self.send_iac(reply[0], opt)
             raise
         else:
-            if isinstance(evt, anyio.abc.Event):
+            if hasattr(evt,"is_set"): # isinstance(evt, anyio.abc.Event):
                 await evt.set()
             elif evt is not val:
                 # Changed value. Reply with the new state.
@@ -934,6 +942,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         opt = Opt(opt)
         buf = self._escape_iac(b''.join(bytes([b]) if isinstance(b,int) else b
             for b in bufs))
+        self.log.debug("send IAC SB %s %r",opt.name,buf)
         await self.send(bytes([IAC,SB,opt])+buf+bytes([IAC,SE]), escape_iac=False)
 
     send_subnegotiation=send_subneg
@@ -1133,17 +1142,22 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self.log.warning("Charsets: no idea what to do with %r", offers)
         return None
 
-    async def _set_charset(self, charset):
+    async def _set_charset(self, charset, rv=True):
         """
         Completed charset subnegotiation.
         Queues a callback to set the decoder in-line.
         """
+        try:
+            codecs.getincrementaldecoder(charset)
+        except LookupError:
+            return False
         self._encoder = lambda x: x.encode(encoding=charset, errors="replace")
-        self.queue_recv_message(SetCharset(charset))
+        await self.queue_recv_message(SetCharset(charset))
         self._charset = charset
         if self._charset_lock is not None:
             lock,self._charset_lock = self._charset_lock,None
             await lock.set(charset)
+        return rv
 
     async def request_charset(self, *charsets):
         """
@@ -1161,29 +1175,19 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if not charsets:
             charsets = ("UTF-8","LATIN9","LATIN1","US-ASCII")
         # TODO
+        osc,self._charset = self._charset,charsets[0]
         if not await (self.local_option if self.server else self.remote_option)(CHARSET, True):
             # Duh. Let's use it anyway.
-            await self._set_charset(charsets[0])
+            await self._set_charset(osc or charsets[0])
             return False
 
-        async with self._subneg_lock[opt]:
-            assert set
-            if self._charset == charsets[0]:
+        async with self._subneg_lock[CHARSET]:
+            if osc == charsets[0]:
                 return True
             self._charset_lock = ValueEvent()
 
-            await self.send_iac(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
+            await self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
             await self._charset_lock.wait()
-
-        codepages = await self._ext_send_callback[CHARSET]()
-
-        sep = ' '
-        response = bytearray([REQUEST])
-        response.extend([bytes(sep, 'ascii')])
-        response.extend([bytes(sep.join(codepages), 'ascii')])
-        self.log.debug('send IAC SB CHARSET REQUEST {} IAC SE'.format(
-            sep.join(codepages)))
-        await self.send_subneg(CHARSET,b''.join(response))
         return True
 
 
@@ -1212,7 +1216,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         elif opt == ACCEPTED:
             charset = buf.decode('ascii')
             self.log.debug('recv IAC SB CHARSET ACCEPTED %r IAC SE', charset)
-            await self._set_charset(charset)
+            if not await self._set_charset(charset):
+                # Duh. The remote side returned nonsense.
+                await self._set_charset("UTF-8", False)
 
         elif opt == REJECTED:
             self.log.warning('recv IAC SB CHARSET REJECTED IAC SE')
