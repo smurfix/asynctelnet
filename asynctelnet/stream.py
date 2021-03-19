@@ -432,7 +432,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     async def receive(self, max_bytes=4096) -> Union[str,bytes,RecvMessage]:
         while True:
             chunk = await self._receive(max_bytes)
-            import pdb;pdb.set_trace()
             if isinstance(chunk, SetCharset):
                 self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
                 continue
