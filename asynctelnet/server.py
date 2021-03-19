@@ -278,7 +278,7 @@ class TelnetServer(server_base.BaseServer):
         self._extra['xdisploc'] = xdisploc
 
 
-async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=None, log=None, **kwds):
+async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServer, shell=None, log=None, **kwds):
     """
     Run a TCP Telnet server.
 
@@ -335,6 +335,8 @@ async def server_loop(host=None, port=23, protocol_factory=TelnetServer, shell=N
 
     if log is not None:
         log.info('Server ready on {0}:{1}'.format(host, port))
+    if evt is not None:
+        await evt.set()
     await l.serve(serve)
 
 
