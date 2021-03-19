@@ -9,25 +9,7 @@ Homepage: http://asynctelnet.readthedocs.io/
 Package: python3-asynctelnet
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends}
-Description: Python 3 anyio Telnet server and client Protocol library
- .. image:: https://img.shields.io/pypi/v/asynctelnet.svg
-     :alt: Latest Version
-     :target: https://pypi.python.org/pypi/asynctelnet
+Description: async telnet server and client library
+ asynctelnet is an asynchronous telnet client and server library for python.
  .
- .. image:: https://img.shields.io/pypi/dm/asynctelnet.svg
-     :alt: Downloads
-     :target: https://pypi.python.org/pypi/asynctelnet
- .
- .
- Introduction
- ============
- .
- asynctelnet is an asynchronous Telnet Client and Server library for python.
- This project requires python 3.6 and later, using the anyio_ module.
- .
- .. _anyio: https://anyio.readthedocs.io/
- .
- asynctelnet is a heavily modified anyio-ization of the telnetlib3_ module.
- .
- .. _telnetlib3: https://telnetlib3.readthedocs.io/
-
+ It works with both asyncio and Trio.
