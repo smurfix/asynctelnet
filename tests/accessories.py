@@ -3,6 +3,7 @@ import pytest
 import contextlib
 from functools import partial
 import anyio
+import socket
 
 from asynctelnet.server import server_loop
 

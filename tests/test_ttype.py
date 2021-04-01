@@ -4,7 +4,7 @@ import asyncio
 
 # local imports
 import asynctelnet
-from asynctelnet.tests.accessories import (
+from tests.accessories import (
     unused_tcp_port,
     bind_host
 )

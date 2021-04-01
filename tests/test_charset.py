@@ -4,7 +4,7 @@ import asyncio
 
 # local imports
 import asynctelnet
-from asynctelnet.tests.accessories import (
+from tests.accessories import (
     unused_tcp_port,
     bind_host
 )
@@ -68,7 +68,7 @@ async def test_telnet_client_send_charset(bind_host, unused_tcp_port):
     await asyncio.wait_for(
         asynctelnet.create_server(
             protocol_factory=ServerTestCharset,
-            host=bind_host, port=unused_tcp_port)
+            host=bind_host, port=unused_tcp_port),
         0.15)
 
     reader, writer = await asyncio.wait_for(

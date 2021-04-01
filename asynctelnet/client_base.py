@@ -13,7 +13,10 @@ from .accessories import CtxObj
 
 __all__ = ('BaseClient',)
 
-from anyio.abc.sockets import SocketAttribute
+try:
+    from anyio.abc import SocketAttribute
+except ImportError:
+    from anyio.abc.sockets import SocketAttribute
 
 class BaseClient(TelnetStream):
     """Base Telnet Client."""

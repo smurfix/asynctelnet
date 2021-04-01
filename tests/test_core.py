@@ -121,8 +121,7 @@ async def test_telnet_server_open_close(bind_host, server):
 #
 
 @pytest.mark.anyio
-async def test_telnet_server_advanced_negotiation(
-        bind_host, unused_tcp_port):
+async def test_telnet_server_advanced_negotiation(server):
     """Test asynctelnet.TelnetServer() advanced negotiation."""
     # given
     from asynctelnet.telopt import (
