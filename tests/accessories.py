@@ -50,4 +50,4 @@ def unused_tcp_port_factory():
     return factory
 
 
-__all__ = ('bind_host', 'unused_tcp_port', 'unused_tcp_port_factory',)
+__all__ = ('bind_host', 'unused_tcp_port', 'unused_tcp_port_factory', 'server')
