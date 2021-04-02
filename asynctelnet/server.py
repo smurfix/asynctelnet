@@ -69,29 +69,6 @@ class TelnetServer(server_base.BaseServer):
         from .telopt import NAWS, NEW_ENVIRON, TSPEED, TTYPE, XDISPLOC, CHARSET
         await super().setup()
 
-        # begin timeout timer
-#       async with self.with_timeout():
-
-#           # Wire extended rfc callbacks for responses to
-#           # requests of terminal attributes, environment values, etc.
-#           for tel_opt, callback_fn in [
-#               (NAWS, self.on_naws),
-#               (NEW_ENVIRON, self.on_environ),
-#               (TSPEED, self.on_tspeed),
-#               (TTYPE, self.on_ttype),
-#               (XDISPLOC, self.on_xdisploc),
-#               (CHARSET, self.on_charset),
-#           ]:
-#               self.writer.set_ext_callback(tel_opt, callback_fn)
-
-#           # Wire up a callbacks that return definitions for requests.
-#           for tel_opt, callback_fn in [
-#               (NEW_ENVIRON, self.on_request_environ),
-#               (CHARSET, self.on_request_charset),
-#           ]:
-#               self.writer.set_ext_send_callback(tel_opt, callback_fn)
-
-
         from .telopt import (DO, WILL, SGA, ECHO, BINARY, TTYPE, 
                              NEW_ENVIRON, NAWS, CHARSET)
         # No terminal? don't try.
