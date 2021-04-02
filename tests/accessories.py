@@ -18,12 +18,14 @@ def _unused_tcp_port():
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
 
-@pytest.fixture(scope="module", params=['127.0.0.1'])
+@pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
-    @asynccontextmanager
+    @contextlib.asynccontextmanager
     async def mgr(**kw):
         async with anyio.create_task_group() as tg:
-            await tg.spawn(partial(server_loop,host=bind_host,port=unused_tcp_port, **kw))
+            evt=anyio.Event()
+            await tg.spawn(partial(server_loop,evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            await evt.wait()
             yield unused_tcp_port
             await tg.cancel_scope.cancel()
     return mgr
