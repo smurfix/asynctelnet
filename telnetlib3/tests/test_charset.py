@@ -14,6 +14,9 @@ from telnetlib3.tests.accessories import (
 # 3rd party
 import pytest
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 @pytest.mark.asyncio
 async def test_telnet_server_on_charset(
@@ -41,6 +44,7 @@ async def test_telnet_server_on_charset(
 
     val = await asyncio.wait_for(reader.readexactly(3), 0.5)
     # exercise,
+    logger.debug("Start, got %r",val)
     writer.write(IAC + WILL + CHARSET)
     writer.write(IAC + WONT + TTYPE)
     writer.write(IAC + SB + CHARSET + ACCEPTED +
