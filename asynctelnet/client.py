@@ -38,8 +38,9 @@ class TelnetClient(client_base.BaseClient):
                  tspeed=(38400, 38400), xdisploc='',
                  *args, **kwargs):
         super().__init__(conn, *args, **kwargs)
+        encoding = kwargs.get('encoding', '')
         self.__extra = {
-            'charset': kwargs['encoding'] or '',
+            'charset': encoding,
             # for our purposes, we only send the second part (encoding) of our
             # 'lang' variable, CHARSET negotiation does not provide locale
             # negotiation; this is better left to the real LANG variable
@@ -48,8 +49,8 @@ class TelnetClient(client_base.BaseClient):
             # So which locale should we represent? Rather than using the
             # locale.getpreferredencoding() method, we provide a deterministic
             # class value DEFAULT_LOCALE (en_US), derive and modify as needed.
-            'lang': ('C' if not kwargs['encoding'] else
-                     self.DEFAULT_LOCALE + '.' + kwargs['encoding']),
+            'lang': ('C' if not encoding else
+                     self.DEFAULT_LOCALE + '.' + encoding),
             'cols': cols,
             'rows': rows,
             'term': term,
