@@ -20,8 +20,8 @@ from contextlib import asynccontextmanager
 from functools import partial
 
 # local
-from . import server_base
-from . import accessories
+from .server_base import BaseServer
+from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
 
@@ -29,12 +29,12 @@ CONFIG = collections.namedtuple('CONFIG', [
     'host', 'port', 'loglevel', 'logfile', 'logfmt', 'shell', 'encoding',
     'force_binary', 'timeout'])(
         host='localhost', port=6023, loglevel='info',
-        logfile=None, logfmt=accessories._DEFAULT_LOGFMT ,
-        shell=accessories.function_lookup('asynctelnet.telnet_server_shell'),
+        logfile=None, logfmt=_DEFAULT_LOGFMT ,
+        shell=function_lookup('asynctelnet.telnet_server_shell'),
         encoding='utf8', force_binary=False, timeout=300)
 
 
-class TelnetServer(server_base.BaseServer):
+class TelnetServer(BaseServer):
     """Telnet Server protocol performing common negotiation."""
     #: Maximum number of cycles to seek for all terminal types.  We are seeking
     #: the repeat or cycle of a terminal table, choosing the first -- but when
@@ -89,7 +89,7 @@ class TelnetServer(server_base.BaseServer):
         # negotiation.
         #_lang = self.get_extra_info('LANG', '')
         #if _lang:
-        #    return accessories.encoding_from_lang(_lang)
+        #    return encoding_from_lang(_lang)
 
         # otherwise, the less CHARSET negotiation may be found in many
         # East-Asia BBS and Western MUD systems.
@@ -340,7 +340,7 @@ def parse_server_args():
     parser.add_argument('--logfmt', default=CONFIG.logfmt,
                         help='log format')
     parser.add_argument('--shell', default=CONFIG.shell,
-                        type=accessories.function_lookup,
+                        type=function_lookup,
                         help='module.function_name')
     parser.add_argument('--encoding', default=CONFIG.encoding,
                         help='encoding name')
@@ -368,7 +368,7 @@ def run_server(host=CONFIG.host, port=CONFIG.port, loglevel=CONFIG.loglevel,
     given keyword arguments, serving forever, completing only upon receipt of
     SIGTERM.
     """
-    log = accessories.make_logger(
+    log = make_logger(
         name=__name__,
         loglevel=loglevel,
         logfile=logfile,
