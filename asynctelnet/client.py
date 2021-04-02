@@ -244,7 +244,7 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
                          encoding='utf8', encoding_errors='replace',
                          force_binary=False, term='unknown', cols=80, rows=25,
                          tspeed=(38400, 38400), xdisploc='',
-                         connect_minwait=2.0, connect_maxwait=3.0,
+                         # connect_minwait=2.0, connect_maxwait=3.0,
                          waiter_closed=None, waiter_connected=None,
                          **kwargs):
     """
@@ -282,6 +282,17 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
         negotiation completes, receiving arguments ``(reader, writer)``.
         The reader is a :class:`~.TelnetReader` instance, the writer is
         a :class:`~.TelnetWriter` instance.
+    :param bool force_binary: When ``True``, the encoding specified is used for
+        both directions even when failing ``BINARY`` negotiation, :rfc:`856`.
+        This parameter has no effect when ``encoding=False``.
+    :param str encoding: Character encoding to use. The default is ``utf-8``.
+    :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
+
+    :return mgr: The reader is a :class:`~.TelnetReader`
+        instance, the writer is a :class:`~.TelnetWriter` instance.
+
+    """
+    """
     :param float connect_minwait: The client allows any additional telnet
         negotiations to be demanded by the server within this period of time
         before launching the shell.  Servers should assert desired negotiation
@@ -290,19 +301,10 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
         A server that does not make any telnet demands, such as a TCP server
         that is not a telnet server will delay the execution of ``shell`` for
         exactly this amount of time.
-    :param bool force_binary: When ``True``, the encoding specified is used for
-        both directions even when failing ``BINARY`` negotiation, :rfc:`856`.
-        This parameter has no effect when ``encoding=False``.
-    :param str encoding: Character encoding to use. The default is ``utf-8``.
-    :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
     :param float connect_maxwait: If the remote end is not compliant, or
         otherwise confused by our demands, the shell continues anyway after the
         greater of this value has elapsed.  A client that is not answering
         option negotiation will delay the start of the shell by this amount.
-
-    :return mgr: The reader is a :class:`~.TelnetReader`
-        instance, the writer is a :class:`~.TelnetWriter` instance.
-
     """
     log = log or logging.getLogger(__name__)
 
@@ -367,10 +369,10 @@ def _get_argument_parser():
 
     parser.add_argument('--force-binary', action='store_true',
                         help='force encoding', default=True)
-    parser.add_argument('--connect-minwait', default=1.0, type=float,
-                        help='shell delay for negotiation')
-    parser.add_argument('--connect-maxwait', default=4.0, type=float,
-                        help='timeout for pending negotiation')
+#   parser.add_argument('--connect-minwait', default=1.0, type=float,
+#                       help='shell delay for negotiation')
+#   parser.add_argument('--connect-maxwait', default=4.0, type=float,
+#                       help='timeout for pending negotiation')
     return parser
 
 
