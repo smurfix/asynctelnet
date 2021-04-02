@@ -96,14 +96,14 @@ class TelnetServer(server_base.BaseServer):
                              NEW_ENVIRON, NAWS, CHARSET)
         # No terminal? don't try.
         if await self.remote_option(TTYPE, True):
-            async with anyio.create_task_group() as tg:
-                await tg.spawn(self.local_option,SGA,True)
-                await tg.spawn(self.local_option,ECHO,True)
-                await tg.spawn(self.local_option,BINARY,True)
-                await tg.spawn(self.remote_option,NEW_ENVIRON,True)
-                await tg.spawn(self.remote_option,NAWS,True)
-                await tg.spawn(self.remote_option,BINARY,True)
-                await tg.spawn(self.request_charset("UTF-8"))
+            async with anyio.TaskGroup() as tg:
+                tg.spawn(self.local_option, SGA, True)
+                tg.spawn(self.local_option, ECHO, True)
+                tg.spawn(self.local_option, BINARY, True)
+                tg.spawn(self.remote_option, NEW_ENVIRON, True)
+                tg.spawn(self.remote_option, NAWS, True)
+                tg.spawn(self.remote_option, BINARY, True)
+                tg.spawn(self.request_charset("UTF-8"))
 
         # TODO request environment
 
@@ -131,7 +131,7 @@ class TelnetServer(server_base.BaseServer):
         if duration == -1:
             duration = self.get_extra_info('timeout')
         if duration > 0:
-            async with anyio.move_on_after(duration) as sc:
+            with anyio.move_on_after(duration) as sc:
                 yield sc
         else:
             yield None

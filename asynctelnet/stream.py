@@ -24,7 +24,7 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar)
-from .accessories import CtxObj, spawn, ValueEvent
+from .accessories import CtxObj, ValueEvent
 
 # list of IAC commands needing 3+ bytes
 _iac_multibyte = {DO, DONT, WILL, WONT, SB}
@@ -178,7 +178,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._iac_callback = {}
 
         # write lock
-        self._write_lock = anyio.create_lock()
+        self._write_lock = anyio.Lock()
 
         # handler registry
         self._handler = {}
@@ -330,15 +330,14 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         async with anyio.create_task_group() as tg:
             self._tg = tg
             self._write_queue, self._read_queue = anyio.create_memory_object_stream(100)
-            self._read_task = await spawn(tg,self._receive_loop)
+            tg.spawn(self._receive_loop)
 
             try:
                 await self.setup()
                 yield self
             finally:
                 await self.teardown()
-                await self._read_task.cancel()
-                await tg.cancel_scope.cancel()
+                tg.cancel_scope.cancel()
 
     async def setup(self):
         """
@@ -346,8 +345,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         if self.force_binary:
             async with anyio.create_task_group() as tg:
-                await tg.spawn(self.local_option,BINARY,True)
-                await tg.spawn(self.remote_option,BINARY,True)
+                tg.spawn(self.local_option, BINARY, True)
+                tg.spawn(self.remote_option, BINARY, True)
         if self._charset:
             await self.request_charset(self._charset)
 
@@ -827,7 +826,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             await self.send_iac(reply[0], opt)
             raise
         else:
-            if hasattr(evt,"is_set"): # isinstance(evt, anyio.abc.Event):
+            if hasattr(evt, "is_set"): # isinstance(evt, anyio.abc.Event):
                 await evt.set()
             elif evt is not val:
                 # Changed value. Reply with the new state.
@@ -1169,7 +1168,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         await self.queue_recv_message(SetCharset(charset))
         self._charset = charset
         if self._charset_lock is not None:
-            lock,self._charset_lock = self._charset_lock,None
+            lock, self._charset_lock = self._charset_lock, None
             await lock.set(charset)
         return rv
 

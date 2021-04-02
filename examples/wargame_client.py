@@ -3,7 +3,7 @@
 import anyio, asynctelnet
 
 async def shell(tcp):
-    async with asynctelnet.TelnetClient(tcp, client=True) as stream:
+    async with asynctelnet.TelnetClient(tcp, encoding='utf-8') as stream:
         while True:
             # read stream until '?' mark is found
             outp = await stream.receive(1024)
@@ -21,6 +21,6 @@ async def shell(tcp):
     print()
 
 async def main():
-    async with await connect_tcp('localhost', 56023) as client:
+    async with await anyio.connect_tcp('localhost', 56023) as client:
         await shell(client)
 anyio.run(main)

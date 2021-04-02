@@ -1,7 +1,6 @@
 """Module provides class BaseServer."""
 
 import traceback
-import anyio
 import logging
 import datetime
 import weakref
