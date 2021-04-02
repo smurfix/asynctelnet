@@ -427,6 +427,21 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 return msg
         await self._write_queue.send(MQ(msg))
 
+    async def read_exactly(self, n_bytes) -> Union[bytes,RecvMessage]:
+        """
+        Read exactly N bytes.
+
+        Mainly used for testing.
+        """
+        buf = bytearray()
+        while len(buf) < n_bytes:
+            chunk = await self._receive(n_bytes - len(buf))
+            if not isinstance(chunk, (bytes,bytearray)):
+                return chunk
+            buf += chunk
+        return buf
+
+
     # string methods, if a decoder is set
 
     async def receive(self, max_bytes=4096) -> Union[str,bytes,RecvMessage]:
