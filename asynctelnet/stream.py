@@ -38,7 +38,7 @@ class TS(Enum):
 
 
 __all__ = ('BaseTelnetStream','ReadCallback','TelnetStream', 'EchoAttr',
-        'InProgressError')
+        'InProgressError', 'RecvMessage', 'SetCharset')
 
 EchoAttr = anyio.typed_attribute()
 
@@ -362,6 +362,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     # receiver
 
+    def _intercept(self, data):
+        pass
+
     async def _receive(self, max_bytes=1024) -> Union[bytes,RecvMessage]:
         buf = self._buffer
         if not buf:
@@ -372,6 +375,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     break
                 data = await buf()
                 if isinstance(data, RecvMessage):
+                    self._intercept(data)
                     return data
         buf,self._buffer = buf[:max_bytes],buf[max_bytes:]
         return buf

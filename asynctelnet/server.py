@@ -22,6 +22,7 @@ from functools import partial
 # local
 from .server_base import BaseServer
 from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
+from .stream import SetCharset
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
 
@@ -198,6 +199,11 @@ class TelnetServer(BaseServer):
                     932, 949, 950, 1006, 1026, 1140, 1250, 1251, 1252,
                     1253, 1254, 1255, 1257, 1257, 1258, 1361,
                 )]
+
+    def _intercept(self, msg):
+        super()._intercept(msg)
+        if isinstance(msg,SetCharset):
+            self.on_charset(msg.charset)
 
     def on_charset(self, charset):
         """Callback for CHARSET response, :rfc:`2066`."""
