@@ -5,7 +5,7 @@ from functools import partial
 import anyio
 import socket
 
-from asynctelnet.server import server_loop
+from asynctelnet.server import server_loop,TelnetServer 
 
 @pytest.fixture(scope="module", params=['127.0.0.1'])
 def bind_host(request):
@@ -21,10 +21,10 @@ def _unused_tcp_port():
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
     @contextlib.asynccontextmanager
-    async def mgr(**kw):
+    async def mgr(factory=TestServer, shell=testshell, **kw):
         async with anyio.create_task_group() as tg:
             evt=anyio.Event()
-            await tg.spawn(partial(server_loop,evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            await tg.spawn(partial(server_loop, protocol_factory=factory, shell=shell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
             await evt.wait()
             yield unused_tcp_port
             await tg.cancel_scope.cancel()
@@ -52,4 +52,24 @@ def unused_tcp_port_factory():
     return factory
 
 
-__all__ = ('bind_host', 'unused_tcp_port', 'unused_tcp_port_factory', 'server')
+@contextlib.asynccontextmanager
+async def reader(client):
+    async with anyio.create_task_group() as tg:
+        tg.spawn(testshell, client)
+        yield client
+        tg.cancel_scope.cancel()
+
+class TestServer(TelnetServer):
+    pass
+
+async def testshell(client):
+    client.log.debug("R start")
+    try:
+        while True:
+            d = await client.receive()
+            client.log.debug("R:%s",d)
+    except anyio.EndOfStream:
+        pass
+
+
+__all__ = ('bind_host', 'unused_tcp_port', 'unused_tcp_port_factory', 'server', 'reader', 'TestServer', 'testshell')

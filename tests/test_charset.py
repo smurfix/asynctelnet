@@ -6,7 +6,7 @@ import anyio
 import asynctelnet
 from tests.accessories import (
     unused_tcp_port,
-    bind_host, server
+    bind_host, server, reader, TestServer
 )
 
 # 3rd party
@@ -14,7 +14,6 @@ import pytest
 
 import logging
 logger = logging.getLogger(__name__)
-
 
 @pytest.mark.anyio
 async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
@@ -26,25 +25,21 @@ async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
     _waiter = anyio.Event()
     given_charset = 'KOI8-U'
 
-    class ServerTestCharset(asynctelnet.TelnetServer):
+    class ServerTestCharset(TestServer):
         def on_charset(self, charset):
             super().on_charset(charset)
-            assert self.extra_attributes['charset'] == given_charset
+            assert self.extra_attributes['charset']() == given_charset
             _waiter.set()
 
-    async with server(protocol_factory=ServerTestCharset), \
-        asynctelnet.open_connection(
-                host=bind_host, port=unused_tcp_port) as client:
+    async with server(factory=ServerTestCharset, encoding=None), \
+        asynctelnet.open_connection(encoding=None,
+                host=bind_host, port=unused_tcp_port) as client, \
+                reader(client):
 
-        async with anyio.fail_after(0.5):
-            val = await client.read_exactly(3)
-            logger.debug("Client: %s",val)
-        #
-        await client.send(bytes((IAC, WILL, CHARSET)), escape_iac=False)
-        await client.send(bytes((IAC, WONT, TTYPE)), escape_iac=False)
-        await client.send(bytes((IAC, SB, CHARSET, ACCEPTED,
-                    *given_charset.encode('ascii'),
-                    IAC, SE)), escape_iac=False)
+        await client.send_iac(WILL, CHARSET)
+        await client.send_iac(WONT, TTYPE)
+        await client.send_subneg(CHARSET, ACCEPTED,
+                    *given_charset.encode('ascii'))
 
         async with anyio.fail_after(2):
             await _waiter.wait()

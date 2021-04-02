@@ -1835,6 +1835,7 @@ class TelnetStream(BaseTelnetStream):
                                '(rx={!r}, tx={!r}: {}', rx, tx, err)
                 return
             await self._ext_callback[TSPEED](rx, tx)
+
         elif opt == SEND:
             assert self.client, f'SE: cannot recv from client: {name_command(cmd)} {opt_kind}'
             (rx, tx) = await self._ext_send_callback[TSPEED]()
