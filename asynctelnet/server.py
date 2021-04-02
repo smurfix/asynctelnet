@@ -325,6 +325,7 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
     """
     protocol_factory = protocol_factory or TelnetServer
     l = await anyio.create_tcp_listener(local_host=host, local_port=port)
+    log = log or logging.getLogger(__name__)
     if shell is None:
         async def shell(_s):
             while True:
@@ -333,8 +334,7 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
         async with protocol_factory(s, log=log, **kwds) as stream:
             await shell(stream)
 
-    if log is not None:
-        log.info('Server ready on {0}:{1}'.format(host, port))
+    log.info('Server ready on {0}:{1}'.format(host, port))
     if evt is not None:
         await evt.set()
     await l.serve(serve)
