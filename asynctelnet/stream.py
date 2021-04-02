@@ -1305,18 +1305,6 @@ class TelnetStream(BaseTelnetStream):
 
         # fetch data to send as subneg on incoming WILL
         self._ext_send_callback = {}
-#       for ext_cmd, key in (
-#               (TTYPE, 'ttype'), (TSPEED, 'tspeed'), (XDISPLOC, 'xdisploc'),
-#               (NAWS, 'naws'), (SNDLOC, 'sndloc')):
-#           self.set_ext_send_callback(
-#               cmd=ext_cmd, func=getattr(self, 'handle_send_{}'.format(key)))
-
-#       for ext_cmd, key in (
-#               (CHARSET, 'charset'), (NEW_ENVIRON, 'environ')):
-#           _cbname = ('handle_send_server_' if self.server else
-#                      'handle_send_client_')
-#           self.set_ext_send_callback(
-#               cmd=ext_cmd, func=getattr(self, _cbname + key))
 
     async def reset(self):
         #: Whether flow control is enabled.
@@ -1791,27 +1779,6 @@ class TelnetStream(BaseTelnetStream):
         """Send terminal speed from TSPEED as int, :rfc:`1079`."""
         self.log.debug('Terminal Speed requested, sending 9600,9600.')
         return 9600, 9600
-
-#   async def handle_recv_charset(self, charset):
-#       """Receive character set as string, :rfc:`2066`."""
-#       self.log.debug('Character set: {}'.format(charset))
-
-#   async def handle_send_client_charset(self, charsets):
-#       """
-#       Send character set selection as string, :rfc:`2066`.
-
-#       Given the available encodings presented by the server, select and
-#       return only one.  Returning an empty string indicates that no
-#       selection is made (request is ignored).
-#       """
-#       assert not self.server
-#       self.log.debug('Character Set requested')
-#       return ''
-
-#   async def handle_send_server_charset(self, charsets):
-#       """Send character set (encodings) offered to client, :rfc:`2066`."""
-#       assert self.server
-#       return ['UTF-8']
 
     async def handle_logout(self, cmd):
         """
