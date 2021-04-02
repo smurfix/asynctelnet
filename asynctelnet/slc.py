@@ -285,7 +285,7 @@ class Linemode(object):
     @property
     def local(self):
         """ True if linemode is local. """
-        return bool(self.mask & ord(LMode_Mode.LOCAL))
+        return bool(self.mask & LMode_Mode.LOCAL)
 
     @property
     def remote(self):
@@ -295,22 +295,22 @@ class Linemode(object):
     @property
     def trapsig(self):
         """ True if signals are trapped by client. """
-        return bool(self.mask & ord(LMode_Mode.TRAPSIG))
+        return bool(self.mask & LMode_Mode.TRAPSIG)
 
     @property
     def ack(self):
         """ Returns True if mode has been acknowledged. """
-        return bool(self.mask & ord(LMode_Mode.ACK))
+        return bool(self.mask & LMode_Mode.ACK)
 
     @property
     def soft_tab(self):
         """ Returns True if client will expand horizontal tab (\x09). """
-        return bool(self.mask & ord(LMode_Mode.SOFT_TAB))
+        return bool(self.mask & LMode_Mode.SOFT_TAB)
 
     @property
     def lit_echo(self):
         """ Returns True if non-printable characters are displayed as-is. """
-        return bool(self.mask & ord(LMode_Mode.LIT_ECHO))
+        return bool(self.mask & LMode_Mode.LIT_ECHO)
 
     def __str__(self):
         """ Returns string representation of line mode, for debugging """
