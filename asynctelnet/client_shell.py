@@ -198,7 +198,7 @@ async def telnet_client_shell(telnet_stream):
         telnet_stream.queue_read_callback(TerminalUpdater(False))
         return False
 
-    async with anyio.TaskGroup() as tg, \
+    async with anyio.create_task_group() as tg, \
             TerminalStream(will_echo=telnet_stream.will_echo) as term :
         telnet_stream.set_command_handler(WILL,ECHO, _handle_will_echo)
         telnet_stream.set_command_handler(WONT,ECHO, _handle_wont_echo)

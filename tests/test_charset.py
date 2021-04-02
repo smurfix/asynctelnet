@@ -36,7 +36,7 @@ async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
         asynctelnet.open_connection(
                 host=bind_host, port=unused_tcp_port) as client:
 
-        async with anyio.fail_after(0.5):
+        with anyio.fail_after(0.5):
             val = await client.read_exactly(3)
             logger.debug("Client: %s",val)
         #
@@ -46,7 +46,7 @@ async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
                     *given_charset.encode('ascii'),
                     IAC, SE)), escape_iac=False)
 
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()
 
 
@@ -103,5 +103,5 @@ async def test_telnet_client_no_charset(bind_host, unused_tcp_port):
         ):
 
         # charset remains latin1
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()

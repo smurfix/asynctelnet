@@ -65,7 +65,7 @@ class ReadCallback:
     prev = None
 
     def __init__(self):
-        self.evt = anyio.create_event()
+        self.evt = anyio.Event()
 
     async def wait(self):
         await self.evt.wait()
@@ -74,11 +74,11 @@ class ReadCallback:
         if self.prev is not None:
             await self.prev._run()
         return await self.run()
-    
+
     async def _set(self):
         if self.prev is not None:
-            await self.prev._set()
-        await self.evt.set()
+            self.prev._set()
+        self.evt.set()
 
     async def __call__(self):
         try:
@@ -184,7 +184,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._handler = {}
 
         # Locks for preventing concurrent subnegotiations
-        self._subneg_lock = defaultdict(anyio.create_lock)
+        self._subneg_lock = defaultdict(anyio.Lock)
 
         self._charset = encoding
         self._charset_errors = encoding_errors
@@ -278,7 +278,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if value is not None:
             if val is value and (force is None or (force is False and val)):
                 return value
-            evt = anyio.create_event()
+            evt = anyio.Event()
             self._local_option[option] = evt
             await self.send_iac(WILL if value else WONT, option)
             await evt.wait()
@@ -314,7 +314,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             if val is value and (force is None or (force is False and val)):
                 return value
 
-            evt = anyio.create_event()
+            evt = anyio.Event()
             self._remote_option[option] = evt
             await self.send_iac(DO if value else DONT, option)
             await evt.wait()
@@ -827,7 +827,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             raise
         else:
             if hasattr(evt, "is_set"): # isinstance(evt, anyio.abc.Event):
-                await evt.set()
+                evt.set()
             elif evt is not val:
                 # Changed value. Reply with the new state.
                 await self.send_iac(reply[val], opt)
@@ -1018,10 +1018,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             raise RuntimeError("There's already a listener on %r"%(opt,))
 
         res = None
-        evt = anyio.create_event()
+        evt = anyio.Event()
         async def reader(buf):
             nonlocal res
-            await evt.set()
+            evt.set()
             res = buf
 
         try:

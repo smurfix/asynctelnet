@@ -117,7 +117,7 @@ class CtxObj:
     async def __aexit__(self, *tb):
         ctx,self.__ctx = self.__ctx,None
         if hasattr(self,"aclose"):
-            async with anyio.move_on_after(2, shield=True):
+            with anyio.move_on_after(2, shield=True):
                 await self.aclose()
         return await ctx.__aexit__(*tb)
 

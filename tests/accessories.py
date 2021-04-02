@@ -23,11 +23,11 @@ def server(bind_host, unused_tcp_port):
     @contextlib.asynccontextmanager
     async def mgr(**kw):
         async with anyio.create_task_group() as tg:
-            evt=anyio.Event()
-            await tg.spawn(partial(server_loop,evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            evt = anyio.Event()
+            tg.spawn(partial(server_loop,evt=evt,host=bind_host,port=unused_tcp_port, **kw))
             await evt.wait()
             yield unused_tcp_port
-            await tg.cancel_scope.cancel()
+            tg.cancel_scope.cancel()
     return mgr
 
 @pytest.fixture

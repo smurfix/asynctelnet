@@ -336,7 +336,7 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
 
     log.info('Server ready on {0}:{1}'.format(host, port))
     if evt is not None:
-        await evt.set()
+        evt.set()
     await l.serve(serve)
 
 
