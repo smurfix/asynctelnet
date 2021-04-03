@@ -21,12 +21,14 @@ def _unused_tcp_port():
 
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
-    res = AttrDict()
-
     @contextlib.asynccontextmanager
     async def mgr(factory=TestServer, shell=testshell, **kw):
+        res = AttrDict()
+        res.evt = anyio.Event()
+
         async def myshell(client):
             res.last = client
+            res.evt.set()
             await shell(client)
 
         async with anyio.create_task_group() as tg:
