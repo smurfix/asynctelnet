@@ -109,11 +109,11 @@ class TelnetClient(BaseClient):
         :rtype: dict
         """
         env = {
-            'LANG': self._extra['lang'],
-            'TERM': self._extra['term'],
-            'DISPLAY': self._extra['xdisploc'],
-            'LINES': self._extra['rows'],
-            'COLUMNS': self._extra['cols'],
+            'LANG': self.__extra['lang'],
+            'TERM': self.__extra['term'],
+            'DISPLAY': self.__extra['xdisploc'],
+            'LINES': self.__extra['rows'],
+            'COLUMNS': self.__extra['cols'],
         }
         return {key: env.get(key, '') for key in keys} or env
 
@@ -143,8 +143,8 @@ class TelnetClient(BaseClient):
                 self.log.info('LookupError: {}'.format(err))
             else:
                 if (codec.name == self.default_encoding or not selected):
-                    self._extra['charset'] = codec.name
-                    self._extra['lang'] = (
+                    self.__extra['charset'] = codec.name
+                    self.__extra['lang'] = (
                         self.DEFAULT_LOCALE + '.' + codec.name)
                     selected = offer
         if selected:
@@ -161,7 +161,7 @@ class TelnetClient(BaseClient):
         :rtype: (int, int)
         :returns: client window size as (rows, columns).
         """
-        return (self._extra['rows'], self._extra['cols'])
+        return (self.__extra['rows'], self.__extra['cols'])
 
     def encoding(self, outgoing=None, incoming=None):
         """
@@ -196,7 +196,7 @@ class TelnetClient(BaseClient):
             # default_encoding, may be re-negotiated later.  Only the CHARSET
             # negotiation method allows the server to select an encoding, so
             # this value is reflected here by a single return statement.
-            return self._extra['charset']
+            return self.__extra['charset']
         return 'US-ASCII'
 
 
