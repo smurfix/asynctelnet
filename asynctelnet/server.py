@@ -49,7 +49,7 @@ class TelnetServer(BaseServer):
         super().__init__(stream, *args, **kwargs)
         self._ttype_count = 1
         self._timer = None
-        self._extra = {
+        self.__extra = {
             'term': term,
             'charset': kwargs.get('encoding', ''),
             'cols': cols,
@@ -60,9 +60,9 @@ class TelnetServer(BaseServer):
     @property
     def extra_attributes(self):
         res = super().extra_attributes
-        for k in self._extra.keys(): 
+        for k in self.__extra.keys():
             def fn(k):
-                return lambda: self._extra[k] 
+                return lambda: self.__extra[k]
             res[k] = fn(k)
         return res
 
@@ -121,7 +121,7 @@ class TelnetServer(BaseServer):
         :param int rows: screen size, by number of cells in height.
         :param int cols: screen size, by number of cells in width.
         """
-        self._extra.update({'rows': rows, 'cols': cols})
+        self.__extra.update({'rows': rows, 'cols': cols})
 
     def on_request_environ(self):
         """
@@ -166,7 +166,7 @@ class TelnetServer(BaseServer):
 
         self.log.debug('on_environ received: {0!r}'.format(u_mapping))
 
-        self._extra.update(u_mapping)
+        self.__extra.update(u_mapping)
 
     def on_request_charset(self):
         """
@@ -207,11 +207,11 @@ class TelnetServer(BaseServer):
 
     def on_charset(self, charset):
         """Callback for CHARSET response, :rfc:`2066`."""
-        self._extra['charset'] = charset
+        self.__extra['charset'] = charset
 
     def on_tspeed(self, rx, tx):
         """Callback for TSPEED response, :rfc:`1079`."""
-        self._extra['tspeed'] = '{0},{1}'.format(rx, tx)
+        self.__extra['tspeed'] = '{0},{1}'.format(rx, tx)
 
     def on_ttype(self, ttype):
         """Callback for TTYPE response, :rfc:`930`."""
@@ -223,9 +223,9 @@ class TelnetServer(BaseServer):
         # The most recently received terminal type by the server is
         # assumed TERM by this implementation, even when unsolicited.
         key = 'ttype{}'.format(self._ttype_count)
-        self._extra[key] = ttype
+        self.__extra[key] = ttype
         if ttype:
-            self._extra['TERM'] = ttype
+            self.__extra['TERM'] = ttype
 
         _lastval = self.get_extra_info('ttype{0}'.format(
             self._ttype_count - 1))
@@ -244,7 +244,7 @@ class TelnetServer(BaseServer):
             self.log.debug(
                 'ttype cycle stop at {0}: {1}, using {2} from ttype2.'
                 .format(key, ttype, val))
-            self._extra['TERM'] = val
+            self.__extra['TERM'] = val
 
         elif (ttype == _lastval):
             self.log.debug('ttype cycle stop at {0}: {1}, repeated.'
@@ -258,7 +258,7 @@ class TelnetServer(BaseServer):
 
     def on_xdisploc(self, xdisploc):
         """Callback for XDISPLOC response, :rfc:`1096`."""
-        self._extra['xdisploc'] = xdisploc
+        self.__extra['xdisploc'] = xdisploc
 
 
 async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServer, shell=None, log=None, **kwds):
