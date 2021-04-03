@@ -1413,7 +1413,7 @@ class TelnetStream(BaseTelnetStream):
         super().__init__(*a,**kw)
 
         #: SLC buffer
-        self._slc_buffer = collections.deque()
+        self._slc_buffer = bytearray()
 
         #: SLC Tab (SLC Functions and their support level, and ascii value)
         self.slctab = slc.generate_slctab(self.default_slc_tab)
