@@ -16,6 +16,7 @@ from functools import partial
 # local imports
 from .accessories import repr_mapping, make_logger, _DEFAULT_LOGFMT, function_lookup
 from .client_base import BaseClient
+from .telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
 
 __all__ = ('TelnetClient', 'TelnetTerminalClient', 'open_connection')
 
@@ -68,8 +69,6 @@ class TelnetClient(BaseClient):
 
     async def setup(self):
         """Called after setting up."""
-        from asynctelnet.telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON
-        from asynctelnet.telopt import CHARSET, NAWS
         await super().setup()
 
         # Wire extended rfc callbacks for requests of
