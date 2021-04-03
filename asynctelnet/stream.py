@@ -153,6 +153,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     _encoder = NullEncoder()
     _charset = None
     _charset_lock = None
+    _charsets_wanted = ()
 
     _did_binary = False
 
@@ -195,6 +196,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         self._charset = encoding
         self._charset_errors = encoding_errors
+        self._use_current_charset = bool(encoding)
+
+        self._set_charset_encoder(encoding)
+        self._set_charset_decoder(encoding)
 
     # Public methods for notifying about, or soliciting state options.
     #
@@ -374,8 +379,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             async with anyio.create_task_group() as tg:
                 await tg.spawn(self.local_option,BINARY,True)
                 await tg.spawn(self.remote_option,BINARY,True)
-        if self._charset:
-            await self.request_charset(self._charset)
 
     async def teardown(self):
         """
@@ -478,7 +481,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         while True:
             chunk = await self._receive(max_bytes)
             if isinstance(chunk, SetCharset):
-                self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
+                self._set_charset_decoder(chunk.charset)
                 continue
 
             if not isinstance(chunk, (bytes,bytearray)):
@@ -496,7 +499,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         while True:
             chunk = await self._readline()
             if isinstance(chunk, SetCharset):
-                self._decoder = codecs.getincrementaldecoder(chunk.charset)(errors=self._charset_errors)
+                self._set_charset_decoder(chunk.charset)
                 continue
             if isinstance(chunk, RecvMessage):
                 return chunk
@@ -577,33 +580,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     async def writeline(self, line: str):
         await self._writeline(self._encoder(line))
-
-    def set_encoder(self, charset: Optional[str], errors: str="replace"):
-        """
-        Set / change the charset decoder.
-
-        Call this when sending the codec change subnegotiation packet,
-        i.e. within the write lock.
-        """
-        if charset is None:
-            self._encoder = NullEncoder()
-        else:
-            self._encoder = lambda x: x.encode(encoding=charset, errors=errors)
-
-    def set_decoder(self, charset: Optional[str], errors: str="replace"):
-        """
-        Set / change the charset decoder.
-
-        Call this in the Subnegotiation handler that triggers the codec
-        change.
-        """
-        class DecoderCB(ReadCallback):
-            async def run(self):
-                if charset is None:
-                    self._decoder = NullDecoder()
-                else:
-                    self._decoder = codecs.getincrementaldecoder(charset)(errors=self._charset_errors)
-
 
     async def handle_do_binary(self):
         return True
@@ -1174,83 +1150,170 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     # charset handling
     # included in basic code because necessary
 
-    async def handle_do_charset(self):
-        return self._charset is not None
+    def get_supported_charsets(self):
+        """
+        This method lists the character sets acceptable by us.
+        A request is started whenever we receive a DO from the remote side.
 
-    async def handle_will_charset(self):
-        return self._charset is not None
+        :rtype list: a list of unicode character strings of US-ASCII
+            characters, indicating the encodings offered by the server in
+            its preferred order.
+
+            An empty return value indicates that no encodings are offered.
+
+        If a default encoding is set, it is returned as the sole entry
+        unless it has been rejected previously.
+
+        The default return value begins::
+
+            ['UTF-8', 'UTF-16', 'LATIN1', 'US-ASCII', 'BIG5', 'GBK', ...]
+        """
+        if self._use_current_charset:
+            self._use_current_charset = False
+            return [self._charset]
+
+        return ['UTF-8', 'UTF-16', 'LATIN1', 'US-ASCII', 'BIG5',
+                'GBK', 'SHIFTJIS', 'GB18030', 'KOI8-R', 'KOI8-U',
+                ] + [
+                    # "Part 12 was slated for Latin/Devanagari,
+                    # but abandoned in 1997"
+                    'ISO8859-{}'.format(iso) for iso in range(1, 16)
+                    if iso != 12
+                ] + ['CP{}'.format(cp) for cp in (
+                    154, 437, 500, 737, 775, 850, 852, 855, 856, 857,
+                    860, 861, 862, 863, 864, 865, 866, 869, 874, 875,
+                    932, 949, 950, 1006, 1026, 1140, 1250, 1251, 1252,
+                    1253, 1254, 1255, 1257, 1257, 1258, 1361,
+                )]
 
     def select_charset(self, offers):
         """
         Select a charset from those offered by the other side.
-        Default: use the first for which we have an incremental decoder.
+        Default: use the one corresponding to the current locale.
+                 If that isn't in the list, use the first for which we have
+                 an incremental decoder.
         """
+
+        # Local charset set? use that.
+        if self._charset:
+            loc = self._charset.lower()
+            for c in offers:
+                if c.lower() == loc:
+                    return c
+
+        # Local charset set? use that.
+        import locale
+        loc = locale.getpreferredencoding()
+        if loc:
+            loc = loc.lower()
+            for c in offers:
+                if c.lower() == loc:
+                    return c
+
+        # Otherwise use the first we can find in their list that works.
         for c in offers:
             try:
                 codecs.getincrementaldecoder(c)
             except LookupError:
                 continue
             else:
+                self.log.info("Charsets: charset %s not offered, using %s", loc, c)
                 return c
         self.log.warning("Charsets: no idea what to do with %r", offers)
         return None
+
+    def _set_charset_decoder(self, codec):
+        if codec or codec is None:
+            self._decoder = codecs.getincrementaldecoder(codec or "utf8")(errors=self._charset_errors)
+        else:
+            self._decoder = NullDecoder()
+
+    def _set_charset_encoder(self, codec):
+        if codec or codec is None:
+            self._encoder = lambda x: x.encode(encoding=codec or "utf8", errors=self._charset_errors)
+        else:
+            self._encoder = lambda x: x
 
     async def _set_charset(self, charset, rv=True):
         """
         Completed charset subnegotiation.
         Queues a callback to set the decoder in-line.
+
+        Only clears the lock if `charset` is not a non-empty string.
         """
-        try:
-            codecs.getincrementaldecoder(charset)
-        except LookupError:
-            return False
-        self._encoder = lambda x: x.encode(encoding=charset, errors="replace")
-        await self.queue_recv_message(SetCharset(charset))
-        self._charset = charset
+        if charset:
+            try:
+                codecs.getincrementaldecoder(charset)
+            except LookupError:
+                return False
+
+            self._set_charset_encoder(charset)
+            self._use_current_charset = bool(charset)
+
+            await self.queue_recv_message(SetCharset(charset))
+            self._charset = charset
         if self._charset_lock is not None:
             lock,self._charset_lock = self._charset_lock,None
-            await lock.set(charset)
+            await lock.set()
         return rv
+
+    async def handle_will_charset(self):
+        """
+        The remote side sent a DO.
+        """
+        return isinstance(self._charset, str)
+
+    async def handle_do_charset(self):
+        """
+        The remote side accepts our WILL.
+        """
+        if not isinstance(self._charset, str):
+            return False
+        if self._charset_lock:  # already in progress
+            return True
+
+        charsets = self._charsets_wanted
+        if charsets:
+            self._charsets_wanted = None
+        else:
+            charsets = self.get_supported_charsets() or ("UTF-8","LATIN9","LATIN1","US-ASCII")
+
+        self._charset_lock = anyio.create_event()
+        # executed by the dispatcher after sending WILL
+        return self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
+
 
     async def request_charset(self, *charsets):
         """
-        Request sub-negotiation CHARSET, :rfc:`2066`.
+        Ask the remote side to choose one of these charsets.
 
-        Returns True if request is valid for telnet state, and was sent.
-
-        The sender requests that all text sent to and by it be encoded in
-        one of character sets specified by string list ``codepages``, which
-        is determined by function value returned by callback registered using
-        :meth:`set_ext_send_callback` with value ``CHARSET``.
-
-        Limitation: there's no difference between input and output charset.
+        Return False if no charset negotiation, None if rejected, or the
+        name of the charset accepted by the other side.
         """
-        if not charsets:
-            charsets = ("UTF-8","LATIN9","LATIN1","US-ASCII")
-        # TODO
-        osc,self._charset = self._charset,charsets[0]
-        if not await (self.local_option if self.server else self.remote_option)(CHARSET, True):
-            # Duh. Let's use it anyway.
-            await self._set_charset(osc or charsets[0])
-            return False
-
-        async with self._subneg_lock[CHARSET]:
-            if osc == charsets[0]:
-                return True
-            self._charset_lock = ValueEvent()
-
-            await self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
+        while self._charset_lock:
             await self._charset_lock.wait()
-        return True
+
+        if self.local_status(CHARSET):
+            self._charset_lock = anyio.create_event()
+            await self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
+        else:
+            self._charsets_wanted = charsets
+            if not await self.local_option(CHARSET, True):
+                return False
+            # if True, we got a DO back, which triggered handle_do_charset
+        await self._charset_lock.wait()
+        return self._charset
 
 
     async def handle_subneg_charset(self, buf):
         opt,buf = buf[0],buf[1:]
+
         if opt == REQUEST:
             if self._charset_lock is not None and self.server:
-                # NACK this
+                # NACK this: simultaneous requests sent by both sides
                 await self.send_sb(CHARSET,REJECTED)
                 return
+
             if buf.startswith(b'TTABLE '):
                 buf = buf[8:]  # ignore TTABLE_V
             sep,buf = buf[0:1],buf[1:]
@@ -1275,10 +1338,12 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         elif opt == REJECTED:
             self.log.warning('recv IAC SB CHARSET REJECTED IAC SE')
+            self._use_current_charset = False
             if self._charset_lock is not None:
                 await self._set_charset(None)
             # otherwise there's been an overlap and we should already have
             # sent an ACCEPTED
+
         else:
             self.log.warning("SB CHARSET TTABLE (or other nonsense): %r %r", opt, buf)
             self._local_option[CHARSET] = False

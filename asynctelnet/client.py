@@ -16,6 +16,7 @@ from functools import partial
 # local imports
 from .accessories import repr_mapping, make_logger, _DEFAULT_LOGFMT, function_lookup
 from .client_base import BaseClient
+from .stream import SetCharset
 from .telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
 
 __all__ = ('TelnetClient', 'TelnetTerminalClient', 'open_connection')
@@ -94,7 +95,6 @@ class TelnetClient(BaseClient):
                 (XDISPLOC, self.send_xdisploc),
                 (NEW_ENVIRON, self.send_env),
                 (NAWS, self.send_naws),
-                (CHARSET, self.send_charset),
                 ):
             self.set_ext_send_callback(opt, func)
 
@@ -108,6 +108,15 @@ class TelnetClient(BaseClient):
         return True
     async def handle_do_ttype(self):
         return bool(self.__extra['term'])
+
+    def _intercept(self, msg):
+        super()._intercept(msg)
+        if isinstance(msg,SetCharset):
+            self.on_charset(msg.charset)
+
+    def on_charset(self, charset):
+        """Callback for CHARSET response, :rfc:`2066`."""
+        self.__extra['charset'] = charset
 
     async def send_ttype(self):
         """Callback for responding to TTYPE requests."""
@@ -142,18 +151,17 @@ class TelnetClient(BaseClient):
         }
         return {key: env.get(key, '') for key in keys} or env
 
-    async def send_charset(self, offered):
+    def select_charset(self, offers):
         """
         Callback for responding to CHARSET requests.
 
         Receives a list of character encodings offered by the server
-        as ``offered`` such as ``('LATIN-1', 'UTF-8')``, for which the
-        client may return a value agreed to use, or None to disagree to
-        any available offers.  Server offerings may be encodings or
-        codepages.
+        as ``offers`` such as ``('LATIN-1', 'UTF-8')``, for which the
+        client may return a value it agrees to use, or None to disagree to
+        all available offers.
 
         The default implementation selects any matching encoding that
-        python is capable of using, preferring any that matches
+        Python is capable of using, preferring any that matches
         :py:attr:`encoding` if matched in the offered list.
 
         :param list offered: list of CHARSET options offered by server.
@@ -161,22 +169,28 @@ class TelnetClient(BaseClient):
         :rtype: Union[str, None]
         """
         selected = ''
-        for offer in offered:
+        cur = self.__extra['charset']
+        if cur:
+            cur = cur.lower()
+            for offer in offers:
+                if offer.lower() == cur:
+                    self.log.debug('encoding unchanged: %s', offer)
+                    return offer
+
+        for offer in offers:
             try:
                 codec = codecs.lookup(offer)
             except LookupError as err:
-                self.log.info('LookupError: {}'.format(err))
+                self.log.info('Unknown: %s', err)
             else:
-                if (codec.name == self.default_encoding or not selected):
-                    self.__extra['charset'] = codec.name
-                    self.__extra['lang'] = (
-                        self.DEFAULT_LOCALE + '.' + codec.name)
-                    selected = offer
+                self.__extra['charset'] = codec.name
+                self.__extra['lang'] = self.DEFAULT_LOCALE + '.' + codec.name
+                selected = offer
+                break
         if selected:
-            self.log.debug('encoding negotiated: {0}'.format(selected))
+            self.log.debug('encoding negotiated: %s', selected)
         else:
-            self.log.warning('No suitable encoding offered by server: {!r}.'
-                             .format(offered))
+            self.log.warning('No suitable encoding offered by server: %r.', offers)
         return selected
 
     async def send_naws(self):

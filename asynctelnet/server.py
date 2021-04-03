@@ -185,38 +185,6 @@ class TelnetServer(BaseServer):
 
         self.__extra.update(u_mapping)
 
-    def on_request_charset(self):
-        """
-        Definition for CHARSET request by client, :rfc:`2066`.
-
-        This method is a callback from :meth:`~.TelnetWriter.request_charset`,
-        first entered on receipt of (WILL, CHARSET) by server.  The return
-        value *defines the request made to the client* for encodings.
-
-        :rtype list: a list of unicode character strings of US-ASCII
-            characters, indicating the encodings offered by the server in
-            its preferred order.
-
-            Any empty return value indicates that no encodings are offered.
-
-        The default return value begins::
-
-            ['UTF-8', 'UTF-16', 'LATIN1', 'US-ASCII', 'BIG5', 'GBK', ...]
-        """
-        return ['UTF-8', 'UTF-16', 'LATIN1', 'US-ASCII', 'BIG5',
-                'GBK', 'SHIFTJIS', 'GB18030', 'KOI8-R', 'KOI8-U',
-                ] + [
-                    # "Part 12 was slated for Latin/Devanagari,
-                    # but abandoned in 1997"
-                    'ISO8859-{}'.format(iso) for iso in range(1, 16)
-                    if iso != 12
-                ] + ['CP{}'.format(cp) for cp in (
-                    154, 437, 500, 737, 775, 850, 852, 855, 856, 857,
-                    860, 861, 862, 863, 864, 865, 866, 869, 874, 875,
-                    932, 949, 950, 1006, 1026, 1140, 1250, 1251, 1252,
-                    1253, 1254, 1255, 1257, 1257, 1258, 1361,
-                )]
-
     def _intercept(self, msg):
         super()._intercept(msg)
         if isinstance(msg,SetCharset):
