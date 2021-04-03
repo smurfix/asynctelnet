@@ -23,6 +23,8 @@ from functools import partial
 from .server_base import BaseServer
 from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
 from .stream import SetCharset
+from .telopt import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY
+
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
 
@@ -67,11 +69,8 @@ class TelnetServer(BaseServer):
         return res
 
     async def setup(self):
-        from .telopt import NAWS, NEW_ENVIRON, TSPEED, TTYPE, XDISPLOC, CHARSET
         await super().setup()
 
-        from .telopt import (DO, WILL, SGA, ECHO, BINARY, TTYPE, 
-                             NEW_ENVIRON, NAWS, CHARSET)
         # No terminal? don't try.
         if await self.remote_option(TTYPE, True):
             async with anyio.create_task_group() as tg:
