@@ -7,7 +7,8 @@ import outcome
 import anyio
 
 __all__ = ('encoding_from_lang', 'name_unicode', 'eightbits', 'make_logger',
-           'repr_mapping', 'function_lookup', 'CtxObj', 'spawn', 'ValueEvent')
+           'repr_mapping', 'function_lookup', 'CtxObj', 'spawn', 'ValueEvent',
+           'AttrDict')
 
 
 def get_version():
@@ -192,4 +193,31 @@ class ValueEvent:
         This does not retrieve the value and is meant for locks and similar helpers.
         """
         await self.event.wait()
+
+
+class AttrDict(dict):
+    """
+    A simple dictionary that can also be used with attributes because of
+    programmer laziness.
+    """
+
+    def __getattr__(self, a):
+        if a.startswith("_"):
+            return object.__getattribute__(self, a)
+        try:
+            return self[a]
+        except KeyError:
+            raise AttributeError(a) from None
+
+    def __setattr__(self, a, b):
+        if a.startswith("_"):
+            super(attrdict, self).__setattr__(a, b)
+        else:
+            self[a] = b
+
+    def __delattr__(self, a):
+        try:
+            del self[a]
+        except KeyError:
+            raise AttributeError(a) from None
 

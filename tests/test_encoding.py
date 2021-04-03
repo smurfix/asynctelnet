@@ -205,7 +205,7 @@ async def test_telnet_server_encoding_by_LANG(
     assert srv_instance.encoding(incoming=True) == 'KOI8-U'
     assert srv_instance.encoding(outgoing=True) == 'KOI8-U'
     assert srv_instance.encoding(incoming=True, outgoing=True) == 'KOI8-U'
-    assert srv_instance.get_extra_info('LANG') == 'uk_UA.KOI8-U'
+    assert srv_instance.extra.LANG == 'uk_UA.KOI8-U'
 
 
 @pytest.mark.anyio

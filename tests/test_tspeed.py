@@ -38,7 +38,7 @@ async def test_telnet_server_on_tspeed(bind_host, unused_tcp_port):
 
     # verify,
     srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.get_extra_info('tspeed') == '123,456'
+    assert srv_instance.extra.tspeed == '123,456'
 
 
 @pytest.mark.anyio

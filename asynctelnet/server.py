@@ -51,22 +51,12 @@ class TelnetServer(BaseServer):
         super().__init__(stream, *args, **kwargs)
         self._ttype_count = 1
         self._timer = None
-        self.__extra = {
-            'term': term,
-            'charset': kwargs.get('encoding', ''),
-            'cols': cols,
-            'rows': rows,
-            'timeout': timeout
-        }
 
-    @property
-    def extra_attributes(self):
-        res = super().extra_attributes
-        for k in self.__extra.keys():
-            def fn(k):
-                return lambda: self.__extra[k]
-            res[k] = fn(k)
-        return res
+        self.extra.term = term
+        self.extra.charset = kwargs.get('encoding', '')
+        self.extra.cols = cols
+        self.extra.rows = rows
+        self.extra.timeout = timeout
 
     async def setup(self):
         await super().setup()
@@ -80,8 +70,8 @@ class TelnetServer(BaseServer):
                 await tg.spawn(self.remote_option, NEW_ENVIRON, True)
                 await tg.spawn(self.remote_option, NAWS, True)
                 await tg.spawn(self.remote_option, BINARY, True)
-                if isinstance(self.__extra["charset"], str):
-                    if self.__extra["charset"]:
+                if isinstance(self.extra.charset, str):
+                    if self.extra.charset:
                         # We have a charset we want to use. Send WILL.
                         await tg.spawn(self.local_option, CHARSET, True)
                     else:
@@ -94,13 +84,13 @@ class TelnetServer(BaseServer):
         # prefer 'LANG' environment variable forwarded by client, if any.
         # for modern systems, this is the preferred method of encoding
         # negotiation.
-        #_lang = self.get_extra_info('LANG', '')
+        #_lang = self.extra.get('LANG', '')
         #if _lang:
         #    return encoding_from_lang(_lang)
 
         # otherwise, the less CHARSET negotiation may be found in many
         # East-Asia BBS and Western MUD systems.
-        #return self.get_extra_info('charset') or self.default_encoding
+        #return self.extra.charset or self.default_encoding
 
     async def handle_will_new_environ(self):
         return True
@@ -111,7 +101,9 @@ class TelnetServer(BaseServer):
     async def handle_do_echo(self):
         return True
     async def handle_will_ttype(self):
-        return bool(self.__extra['term'])
+        if not self.extra.term:
+            return False
+        return super().handle_will_ttype()
 
     @asynccontextmanager
     async def with_timeout(self, duration=-1):
@@ -120,11 +112,11 @@ class TelnetServer(BaseServer):
 
         :param int duration: When specified as a positive integer,
             schedules Future for callback of :meth:`on_timeout`.  When ``-1``,
-            the value of ``self.get_extra_info('timeout')`` is used.  When
+            the value of ``self.extra.timeout`` is used.  When
             non-True, it is canceled.
         """
         if duration == -1:
-            duration = self.get_extra_info('timeout')
+            duration = self.extra.timeout
         if duration > 0:
             async with anyio.move_on_after(duration) as sc:
                 yield sc
@@ -138,7 +130,8 @@ class TelnetServer(BaseServer):
         :param int rows: screen size, by number of cells in height.
         :param int cols: screen size, by number of cells in width.
         """
-        self.__extra.update({'rows': rows, 'cols': cols})
+        self.extra.rows = rows
+        self.extra.cols = cols
 
     def on_request_environ(self):
         """
@@ -183,7 +176,7 @@ class TelnetServer(BaseServer):
 
         self.log.debug('on_environ received: {0!r}'.format(u_mapping))
 
-        self.__extra.update(u_mapping)
+        self.extra.update(u_mapping)
 
     def _intercept(self, msg):
         super()._intercept(msg)
@@ -192,11 +185,11 @@ class TelnetServer(BaseServer):
 
     def on_charset(self, charset):
         """Callback for CHARSET response, :rfc:`2066`."""
-        self.__extra['charset'] = charset
+        self.extra.charset = charset
 
     def on_tspeed(self, rx, tx):
         """Callback for TSPEED response, :rfc:`1079`."""
-        self.__extra['tspeed'] = '{0},{1}'.format(rx, tx)
+        self.extra.tspeed = '{0},{1}'.format(rx, tx)
 
     def on_ttype(self, ttype):
         """Callback for TTYPE response, :rfc:`930`."""
@@ -208,14 +201,13 @@ class TelnetServer(BaseServer):
         # The most recently received terminal type by the server is
         # assumed TERM by this implementation, even when unsolicited.
         key = 'ttype{}'.format(self._ttype_count)
-        self.__extra[key] = ttype
+        self.extra[key] = ttype
         if ttype:
-            self.__extra['TERM'] = ttype
+            self.extra.TERM = ttype
 
-        _lastval = self.get_extra_info('ttype{0}'.format(
-            self._ttype_count - 1))
+        _lastval = self.extra[f'ttype{self._ttype_count-1}']
 
-        if key != 'ttype1' and ttype == self.get_extra_info('ttype1', None):
+        if key != 'ttype1' and ttype == self.extra.get('ttype1', None):
             # cycle has looped, stop
             self.log.debug('ttype cycle stop at {0}: {1}, looped.'
                            .format(key, ttype))
@@ -225,11 +217,11 @@ class TelnetServer(BaseServer):
             self.log.warning('ttype cycle stop at {0}: {1}.'.format(key, ttype))
 
         elif (self._ttype_count == 3 and ttype.upper().startswith('MTTS ')):
-            val = self.get_extra_info('ttype2')
+            val = self.extra.ttype2
             self.log.debug(
                 'ttype cycle stop at {0}: {1}, using {2} from ttype2.'
                 .format(key, ttype, val))
-            self.__extra['TERM'] = val
+            self.extra.TERM = val
 
         elif (ttype == _lastval):
             self.log.debug('ttype cycle stop at {0}: {1}, repeated.'
@@ -243,7 +235,7 @@ class TelnetServer(BaseServer):
 
     def on_xdisploc(self, xdisploc):
         """Callback for XDISPLOC response, :rfc:`1096`."""
-        self.__extra['xdisploc'] = xdisploc
+        self.extra.xdisploc = xdisploc
 
 
 async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServer, shell=None, log=None, **kwds):
@@ -277,12 +269,12 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
         used for both directions even when BINARY mode, :rfc:`856`, is not
         negotiated for the direction specified.  This parameter has no effect
         when ``encoding=None``.
-    :param str term: Value returned for ``writer.get_extra_info('term')``
+    :param str term: Value returned for ``writer.extra.term``
         until negotiated by TTYPE :rfc:`930`, or NAWS :rfc:`1572`.  Default value
         is ``'unknown'``.
-    :param int cols: Value returned for ``writer.get_extra_info('cols')``
+    :param int cols: Value returned for ``writer.extra.cols``
         until negotiated by NAWS :rfc:`1572`. Default value is 80 columns.
-    :param int rows: Value returned for ``writer.get_extra_info('rows')``
+    :param int rows: Value returned for ``writer.extra.rows``
         until negotiated by NAWS :rfc:`1572`. Default value is 25 rows.
 
     This method does not return until cancelled.

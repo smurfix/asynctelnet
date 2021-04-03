@@ -40,8 +40,7 @@ class TelnetClient(BaseClient):
                  tspeed=(38400, 38400), xdisploc='',
                  *args, **kwargs):
         super().__init__(conn, *args, **kwargs)
-        self.__extra = {
-            'charset': kwargs['encoding'] or '',
+        self.extra.charset= kwargs['encoding'] or ''
             # for our purposes, we only send the second part (encoding) of our
             # 'lang' variable, CHARSET negotiation does not provide locale
             # negotiation; this is better left to the real LANG variable
@@ -50,30 +49,20 @@ class TelnetClient(BaseClient):
             # So which locale should we represent? Rather than using the
             # locale.getpreferredencoding() method, we provide a deterministic
             # class value DEFAULT_LOCALE (en_US), derive and modify as needed.
-            'lang': ('C' if not kwargs['encoding'] else
-                     self.DEFAULT_LOCALE + '.' + kwargs['encoding']),
-            'cols': cols,
-            'rows': rows,
-            'term': term,
-            'tspeed': '{},{}'.format(*tspeed),
-            'xdisploc': xdisploc,
-        }
-
-    @property
-    def extra_attributes(self):
-        res = super().extra_attributes
-        for k in self.__extra.keys():
-            def fn(k):
-                return lambda: self.__extra[k] 
-            res[k] = fn(k)
-        return res
+        self.extra.lang = 'C' if not kwargs['encoding'] else \
+                     self.DEFAULT_LOCALE + '.' + kwargs['encoding']
+        self.extra.cols = cols
+        self.extra.rows = rows
+        self.extra.term = term
+        self.extra.tspeed = '{},{}'.format(*tspeed)
+        self.extra.xdisploc = xdisploc
 
     async def setup(self):
         """Called after setting up."""
         await super().setup()
 
         # No terminal? don't try.
-        if await self.local_option(TTYPE, bool(self.__extra['term'])):
+        if await self.local_option(TTYPE, bool(self.extra.term)):
             async with anyio.create_task_group() as tg:
                 await tg.spawn(self.remote_option, SGA, True)
                 await tg.spawn(self.remote_option, ECHO, True)
@@ -81,7 +70,7 @@ class TelnetClient(BaseClient):
                 await tg.spawn(self.local_option, NEW_ENVIRON, True)
                 await tg.spawn(self.local_option, NAWS, True)
                 await tg.spawn(self.local_option, BINARY, True)
-                if self.__extra["charset"]:
+                if self.extra.charset:
                     await tg.spawn(self.local_option, CHARSET, True)
                 else:
                     await tg.spawn(self.remote_option, CHARSET, True)
@@ -107,7 +96,7 @@ class TelnetClient(BaseClient):
     async def handle_will_echo(self):
         return True
     async def handle_do_ttype(self):
-        return bool(self.__extra['term'])
+        return bool(self.extra.term)
 
     def _intercept(self, msg):
         super()._intercept(msg)
@@ -116,19 +105,19 @@ class TelnetClient(BaseClient):
 
     def on_charset(self, charset):
         """Callback for CHARSET response, :rfc:`2066`."""
-        self.__extra['charset'] = charset
+        self.extra.charset = charset
 
     async def send_ttype(self):
         """Callback for responding to TTYPE requests."""
-        return self.__extra['term']
+        return self.extra.term
 
     async def send_tspeed(self):
         """Callback for responding to TSPEED requests."""
-        return tuple(map(int, self.__extra['tspeed'].split(',')))
+        return tuple(map(int, self.extra.tspeed.split(',')))
 
     async def send_xdisploc(self):
         """Callback for responding to XDISPLOC requests."""
-        return self.__extra['xdisploc']
+        return self.extra.xdisploc
 
     async def send_env(self, keys):
         """
@@ -143,11 +132,11 @@ class TelnetClient(BaseClient):
         :rtype: dict
         """
         env = {
-            'LANG': self.__extra['lang'],
-            'TERM': self.__extra['term'],
-            'DISPLAY': self.__extra['xdisploc'],
-            'LINES': self.__extra['rows'],
-            'COLUMNS': self.__extra['cols'],
+            'LANG': self.extra.lang,
+            'TERM': self.extra.term,
+            'DISPLAY': self.extra.xdisploc,
+            'LINES': self.extra.rows,
+            'COLUMNS': self.extra.cols,
         }
         return {key: env.get(key, '') for key in keys} or env
 
@@ -169,7 +158,7 @@ class TelnetClient(BaseClient):
         :rtype: Union[str, None]
         """
         selected = ''
-        cur = self.__extra['charset']
+        cur = self.extra.charset
         if cur:
             cur = cur.lower()
             for offer in offers:
@@ -183,8 +172,8 @@ class TelnetClient(BaseClient):
             except LookupError as err:
                 self.log.info('Unknown: %s', err)
             else:
-                self.__extra['charset'] = codec.name
-                self.__extra['lang'] = self.DEFAULT_LOCALE + '.' + codec.name
+                self.extra.charset = codec.name
+                self.extra.lang = self.DEFAULT_LOCALE + '.' + codec.name
                 selected = offer
                 break
         if selected:
@@ -200,7 +189,7 @@ class TelnetClient(BaseClient):
         :rtype: (int, int)
         :returns: client window size as (rows, columns).
         """
-        return (self.__extra['rows'], self.__extra['cols'])
+        return (self.extra.rows, self.extra.cols)
 
     def encoding(self, outgoing=None, incoming=None):
         """
@@ -235,7 +224,7 @@ class TelnetClient(BaseClient):
             # default_encoding, may be re-negotiated later.  Only the CHARSET
             # negotiation method allows the server to select an encoding, so
             # this value is reflected here by a single return statement.
-            return self.__extra['charset']
+            return self.extra.charset
         return 'US-ASCII'
 
 

@@ -25,7 +25,7 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar)
-from .accessories import CtxObj, spawn, ValueEvent
+from .accessories import CtxObj, spawn, ValueEvent, AttrDict
 
 # list of IAC commands needing 3+ bytes
 _iac_multibyte = {DO, DONT, WILL, WONT, SB}
@@ -157,6 +157,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     _did_binary = False
 
+    # Storage for extra attributes. Used by client and server
+    # so no duplicate code please.
+    extra: AttrDict = None
+
     def __init__(self, stream: anyio.abc.ByteStream, *,
             log=None, force_binary=False, encoding=None,
             encoding_errors="replace", client=False, server=False):
@@ -174,6 +178,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._orig_stream = stream
         self.log = log or logging.getLogger(__name__)
         self.force_binary = force_binary
+
+        self.extra = AttrDict()
 
         if client == server:
             raise TypeError("You must set either `client` or `server`.")
@@ -200,6 +206,25 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         self._set_charset_encoder(encoding)
         self._set_charset_decoder(encoding)
+
+    @property
+    def extra_attributes(self):
+        """
+        Attach our extra attrs to anyio's extra_attributes mechanism.
+
+        This isn't really nice since anyio's attrs are singletons, not
+        strings. TODO.
+        """
+        res = self._stream.extra_attributes
+        res[EchoAttr] = lambda: self.echo
+
+        for k in self.extra.keys():
+            def fn(k):
+                return lambda: self.extra[k] 
+            res[k] = fn(k)
+        return res
+
+        return res
 
     # Public methods for notifying about, or soliciting state options.
     #
@@ -718,6 +743,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 c = '-+'[v] if isinstance(v,bool) else '?'
             info.append(c+str(k).rsplit(".")[-1])
 
+        if self.extra:
+            info.append('extra:')
+            for k,v in self.extra.items():
+                info.append(f"{k}={v !r}")
+
         return info
 
     def __repr__(self):
@@ -902,12 +932,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         assert self.server, ('Client never performs echo of input received.')
         if self.will_echo:
             await self.send(data=data)
-
-    @property
-    def extra_attributes(self):
-        res = self._stream.extra_attributes
-        res[EchoAttr] = lambda: self.echo
-        return res
 
     @property
     def will_echo(self):

@@ -44,7 +44,7 @@ async def test_telnet_server_on_xdisploc(
 
     # verify,
     srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.get_extra_info('xdisploc') == 'alpha:0'
+    assert srv_instance.extra.xdisploc == 'alpha:0'
 
 
 @pytest.mark.anyio

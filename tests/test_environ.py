@@ -48,9 +48,9 @@ async def test_telnet_server_on_environ(
                  }) + IAC + SE)
 
     srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.get_extra_info('ALPHA') == 'oMeGa'
-    assert srv_instance.get_extra_info('BETA') == 'b'
-    assert srv_instance.get_extra_info('GAMMA') == (
+    assert srv_instance.extra.ALPHA == 'oMeGa'
+    assert srv_instance.extra.BETA == 'b'
+    assert srv_instance.extra.GAMMA == (
         u''.join(chr(n) for n in range(0, 128)))
 
 
@@ -129,7 +129,7 @@ async def test_telnet_client_send_var_uservar_environ(bind_host,
         'TERM': 'vt220'
     }
     for key, val in mapping.items():
-        assert writer.get_extra_info(key) == val
+        assert writer.extra[key] == val
 
 
 @pytest.mark.anyio

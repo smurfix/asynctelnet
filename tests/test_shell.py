@@ -170,7 +170,7 @@ async def test_telnet_server_given_shell(
     assert result == expected
 
     server = await asyncio.wait_for(_waiter, 0.5)
-    server_port = str(server._transport.get_extra_info('peername')[1])
+    server_port = str(server._transport.extra.peername[1])
 
     cmd_output_table = (
         # exercise backspace in input for help command

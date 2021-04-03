@@ -44,8 +44,8 @@ async def test_telnet_server_on_naws(
                  IAC + SE)
 
     srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.get_extra_info('cols') == given_cols
-    assert srv_instance.get_extra_info('rows') == given_rows
+    assert srv_instance.extra.cols == given_cols
+    assert srv_instance.extra.rows == given_rows
 
 
 @pytest.mark.anyio

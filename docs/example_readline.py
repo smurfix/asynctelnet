@@ -21,7 +21,7 @@ class Client(collections.namedtuple(
     'Client', ['reader', 'writer', 'notify_queue'])):
 
     def __str__(self):
-        return '#{1}'.format(*self.writer.get_extra_info('peername'))
+        return '#{1}'.format(*self.writer.extra.peername)
 
 class Lander(object):
     """

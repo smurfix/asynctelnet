@@ -34,11 +34,11 @@ async def test_telnet_server_default_timeout(
     writer.write(IAC + WONT + TTYPE)
 
     server = await asyncio.wait_for(_waiter, 0.5)
-    assert server.get_extra_info('timeout') == given_timeout
+    assert server.extra.timeout == given_timeout
 
     # exercise, calling set_timeout remains the default given_value.
     server.set_timeout()
-    assert server.get_extra_info('timeout') == given_timeout
+    assert server.extra.timeout == given_timeout
 
 
 @pytest.mark.anyio
@@ -62,13 +62,13 @@ async def test_telnet_server_set_timeout(
     server = await asyncio.wait_for(_waiter, 0.5)
     for value in (19.29, 0):
         server.set_timeout(value)
-        assert server.get_extra_info('timeout') == value
+        assert server.extra.timeout == value
 
     # calling with no arguments does nothing, only resets
     # the timer. value remains the last-most value from
     # previous loop
     server.set_timeout()
-    assert server.get_extra_info('timeout') == 0
+    assert server.extra.timeout == 0
 
 
 @pytest.mark.anyio

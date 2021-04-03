@@ -52,8 +52,8 @@ async def relay_shell(client_reader, client_writer):
         next_host, next_port))
     server_reader, server_writer = await open_connection(
         next_host, next_port,
-        cols=client_writer.get_extra_info('cols'),
-        rows=client_writer.get_extra_info('rows'))
+        cols=client_writer.extra.cols,
+        rows=client_writer.extra.rows)
     client_writer.write('connected!' + CR + LF)
  
     done = []
