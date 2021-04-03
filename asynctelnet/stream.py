@@ -89,6 +89,12 @@ class ReadCallback:
     async def run(self):
         raise NotImplementedError("You need to actually do something!")
 
+    def __repr__(self):
+        if self.prev:
+            return f"RCB:{self.__class__.__name__}>{self.prev !r}"
+        else:
+            return f"RCB:{self.__class__.__name__}"
+
 class RecvMessage:
     """
     Instances of this class may be returned by `ReadCallback.run`. They
@@ -693,21 +699,21 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._ext_send_callback.clear()
         self._slc_callback.clear()
         self._iac_callback.clear()
-        self.fn_encoding = None
 
     def _repr(self):
         info = []
-        if self._local_opts:
-            info.append('local:')
-            for k,v in self._local_opts.items():
-                c = '-+'[v] if isinstance(v,bool) else '?'
-            info.append(c+k)
+        if self._local_option:
 
-        if self._remote_opts:
-            info.append('remote:')
-            for k,v in self._local_opts.items():
+            info.append('local:')
+            for k,v in self._local_option.items():
                 c = '-+'[v] if isinstance(v,bool) else '?'
-            info.append(c+k)
+            info.append(c+str(k).rsplit(".")[-1])
+
+        if self._remote_option:
+            info.append('remote:')
+            for k,v in self._remote_option.items():
+                c = '-+'[v] if isinstance(v,bool) else '?'
+            info.append(c+str(k).rsplit(".")[-1])
 
         return info
 
@@ -1306,46 +1312,17 @@ class TelnetStream(BaseTelnetStream):
         # fetch data to send as subneg on incoming WILL
         self._ext_send_callback = {}
 
-    async def reset(self):
-        #: Whether flow control is enabled.
-        await super().reset()
-        lflow = True
-
     def _repr(self):
         info = super()._repr()
 
         info.append('mode:{self.mode}'.format(self=self))
 
         # IAC options
-        info.append('{0}lineflow'.format('+' if self.lflow else '-'))
+        # info.append('{0}lineflow'.format('+' if self.lflow else '-'))
         info.append('{0}xon_any'.format('+' if self.xon_any else '-'))
         info.append('{0}slc_sim'.format('+' if self.slc_simulated else '-'))
 
-        # IAC negotiation status
-        _failed_reply = sorted([name_commands(opt) for (opt, val)
-                                in self.pending_option.items()
-                                if val])
-        if _failed_reply:
-            info.append('failed-reply:{opts}'.format(
-                opts=','.join(_failed_reply)))
-
-        _local = sorted(name_commands(opt) for (opt, val)
-                        in self._local_option.items()
-                        if val is True)
-        if _local:
-            localpoint = 'server' if self.server else 'client'
-            info.append('{kind}-will:{opts}'.format(
-                kind=localpoint, opts=','.join(_local)))
-
-        _remote = sorted(
-            name_commands(opt) for (opt, val)
-            in self._remote_option.items()
-            if val is True)
-        if _remote:
-            info.append('{kind}-do:{opts}'.format(
-                kind=endpoint, opts=','.join(_remote)))
-
-        return '<{0}>'.format(' '.join(info))
+        return info
 
 
     async def feed_byte(self, byte):
