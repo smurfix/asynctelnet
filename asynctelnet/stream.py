@@ -299,7 +299,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         :param force bool: whether to send a message even though the state is already known.
             If ``False``, re-send only if previously ``True``.
 
-        If the value is not ``None``, tthis method will result in an error
+        If the value is not ``None``, this method will result in an error
         if a negotiation is in progress.
         """
         # XXX KEEP IN SYNC WITH NEXT METHOD
@@ -1360,7 +1360,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             charset = buf.decode('ascii')
             self.log.debug('recv IAC SB CHARSET ACCEPTED %r IAC SE', charset)
             if not await self._set_charset(charset):
-                # Duh. The remote side returned nonsense.
+                # Duh. The remote side returned something we can't handle.
                 await self._set_charset("UTF-8", False)
 
         elif opt == REJECTED:
@@ -1575,14 +1575,24 @@ class TelnetStream(BaseTelnetStream):
 
         Returns True if request is valid for telnet state, and was sent.
         """
-        assert self.server, (
-            'SB TTYPE SEND may only be sent by server end')
-        if not self.remote_status(TTYPE):
-            self.log.debug('cannot send SB TTYPE SEND'
-                           'without receipt of WILL TTYPE')
-        return False
-        self.log.debug('send IAC SB TTYPE SEND IAC SE')
-        await self.send_subneg(TTYPE, SEND)
+        if not self.server:
+            self.log.error('TTYPE SEND may only be sent by server')
+            return False
+        if not hasattr(self, "handle_send_ttype"):
+            return False
+        return self.send_subneg(TTYPE, SEND)
+
+    async def handle_do_ttype(self):
+        """
+        Send TTYPE SEND sub-negotiation, :rfc:`930`.
+
+        Returns True if request is valid for telnet state, and was sent.
+        """
+        if self.server:
+            self.log.error('TTYPE IS may only be sent by client')
+            return False
+        if not hasattr(self, "handle_recv_ttype"):
+            return False
         return True
 
     async def handle_will_forwardmask(self, fmask=None):
@@ -1815,21 +1825,6 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('Location requested, sending empty response.')
         return ''
 
-    async def handle_recv_ttype(self, ttype):
-        """
-        Receive TTYPE value ``ttype``, :rfc:`1091`.
-
-        A string value that represents client's emulation capability.
-
-        Some example values: VT220, VT100, ANSITERM, ANSI, TTY, and 5250.
-        """
-        self.log.debug('Terminal type is {!r}'.format(ttype))
-
-    async def handle_send_ttype(self):
-        """Send TTYPE value ``ttype``, :rfc:`1091`."""
-        self.log.warning('Terminal type requested, sending empty string.')
-        return ''
-
     async def handle_recv_naws(self, width, height):
         """Receive window size ``width`` and ``height``, :rfc:`1073`."""
         self.log.debug('Terminal cols={}, rows={}'.format(width, height))
@@ -1961,16 +1956,20 @@ class TelnetStream(BaseTelnetStream):
         self.log.debug('recv %s %s: %r', TTYPE, opt_kind, buf)
 
         if opt == IS:
-            assert self.server, f'SE: cannot recv from server: TTYPE {opt}'
+            # only a server is supposed to have this
+            if not hasattr(self,"handle_recv_ttype"):
+                self.log.error(f'SE: dunno how to recv: TTYPE {opt}')
+                return
             ttype_str = buf.decode('ascii')
-            self.log.debug('recv IAC SB TTYPE IS %r', ttype_str)
-            await self._ext_callback[TTYPE](ttype_str)
+            await self.handle_recv_ttype(ttype_str)
 
         elif opt == SEND:
-            assert self.client, f'SE: cannot recv from client: TTYPE {opt}'
-            ttype_str = (await self._ext_send_callback[TTYPE]()).encode('ascii')
-            self.log.debug('send IAC SB TTYPE IS %r IAC SE', ttype_str)
-            await self.send_subneg(TTYPE, IS + ttype_str)
+            # only a client is supposed to have this
+            if not hasattr(self,"handle_send_ttype"):
+                self.log.error(f'SE: dunno how to send: TTYPE {opt}')
+                return
+            ttype_str = (await self.handle_send_ttype()).encode('ascii')
+            await self.send_subneg(TTYPE, IS, ttype_str)
 
     async def handle_subneg_new_environ(self, buf):
         """

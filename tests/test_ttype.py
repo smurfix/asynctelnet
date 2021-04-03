@@ -1,54 +1,60 @@
 """Test TTYPE, rfc-930_."""
 # std imports
-import asyncio
+import anyio
 
 # local imports
 import asynctelnet
-from tests.accessories import (
-    unused_tcp_port,
-    bind_host
-)
+from asynctelnet.telopt import IS, WILL, TTYPE
+from tests.accessories import unused_tcp_port, bind_host, server, reader
 
 # 3rd party
 import pytest
 
+class NoTtype:
+    async def setup(self):
+        await super().setup()
+        self.extra.term = "whatever"
+
+class ClientTestTtype(NoTtype, asynctelnet.BaseClient):
+    pass
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype(bind_host, unused_tcp_port):
-    """Test Server's callback method on_ttype()."""
+async def test_telnet_server_on_ttype(bind_host, unused_tcp_port, server):
+    """Test Server's callback method handle_recv_ttype()."""
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
-            _waiter.set_result(self)
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
+            if self.extra.term_done:
+                _waiter.set()
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise
+        await client.send_iac(WILL, TTYPE)
+        await client.send_subneg(TTYPE, IS, b'ALPHA')
+        await client.send_subneg(TTYPE, IS, b'ALPHA')
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    writer.write(IAC + SB + TTYPE + IS + b'ALPHA' + IAC + SE)
-    writer.write(IAC + SB + TTYPE + IS + b'ALPHA' + IAC + SE)
+        # verify
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert 'ALPHA' == srv_instance.extra.ttype1
-    assert 'ALPHA' == srv_instance.extra.ttype2
-    assert 'ALPHA' == srv_instance.extra.TERM
+    assert 'ALPHA' == srv.last.extra.ttype1
+    assert 'ALPHA' == srv.last.extra.ttype2
+    assert 'ALPHA' == srv.last.extra.TERM
 
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_beyond_max(
-        bind_host, unused_tcp_port):
+        bind_host, unused_tcp_port, server):
     """
-    Test Server's callback method on_ttype() with long list.
+    Test Server's callback method handle_recv_ttype() with long list.
 
     After TTYPE_LOOPMAX, we stop requesting and tracking further
     terminal types; something of an error (a warning is emitted),
@@ -56,200 +62,191 @@ async def test_telnet_server_on_ttype_beyond_max(
     an infinite loop with a distant end that is not conforming.
     """
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'DELTA',
                     'EPSILON', 'ZETA', 'ETA', 'THETA',
                     'IOTA', 'KAPPA', 'LAMBDA', 'MU')
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
+    assert len(given_ttypes) > asynctelnet.TelnetServer.TTYPE_LOOPMAX
+
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
             if ttype == given_ttypes[-1]:
-                _waiter.set_result(self)
+                _waiter.set()
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise,
+        await client.send_iac(WILL, TTYPE)
+        for send_ttype in given_ttypes:
+            await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    for send_ttype in given_ttypes:
-        writer.write(IAC + SB + TTYPE + IS +
-                     send_ttype.encode('ascii') +
-                     IAC + SE)
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
     # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
     for idx in range(asynctelnet.TelnetServer.TTYPE_LOOPMAX):
-        key = 'ttype{0}'.format(idx + 1)
+        key = f'ttype{idx + 1}'
         expected = given_ttypes[idx]
-        assert srv_instance.extra[key] == expected, (idx, key)
+        assert srv.last.extra[key] == expected, (idx, key)
 
     # ttype{max} gets overwritten continiously, so the last given
     # ttype is the last value.
-    key = 'ttype{0}'.format(asynctelnet.TelnetServer.TTYPE_LOOPMAX + 1)
+    key = f'ttype{asynctelnet.TelnetServer.TTYPE_LOOPMAX + 1}'
     expected = given_ttypes[-1]
-    assert srv_instance.extra[key] == expected, (idx, key)
-    assert srv_instance.extra.TERM == given_ttypes[-1]
+    assert srv.last.extra[key] == expected
+    assert srv.last.extra.TERM == expected
 
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_empty(
-        bind_host, unused_tcp_port):
-    """Test Server's callback method on_ttype(): empty value is ignored. """
+        bind_host, unused_tcp_port, server):
+    """Test Server's callback method handle_recv_ttype(): empty value is ignored. """
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
     given_ttypes = ('ALPHA', '', 'BETA')
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
             if ttype == given_ttypes[-1]:
-                _waiter.set_result(self)
+                _waiter.set()
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise,
+        await client.send_iac(WILL, TTYPE)
+        for send_ttype in given_ttypes:
+            await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    for send_ttype in given_ttypes:
-        writer.write(IAC + SB + TTYPE + IS +
-                     send_ttype.encode('ascii') +
-                     IAC + SE)
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.extra.ttype1 == 'ALPHA'
-    assert srv_instance.extra.ttype2 == 'BETA'
-    assert srv_instance.extra.TERM == 'BETA'
+        # verify,
+        assert srv.last.extra.ttype1 == 'ALPHA'
+        assert srv.last.extra.ttype2 == 'BETA'
+        assert srv.last.extra.TERM == 'BETA'
 
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_looped(
-        bind_host, unused_tcp_port):
-    """Test Server's callback method on_ttype() when value looped. """
+        bind_host, unused_tcp_port, server):
+    """Test Server's callback method handle_recv_ttype() when value looped. """
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'ALPHA')
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
         count = 1
 
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
             if self.count == len(given_ttypes):
-                _waiter.set_result(self)
+                _waiter.set()
             self.count += 1
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise,
+        await client.send_iac(WILL, TTYPE)
+        for send_ttype in given_ttypes:
+            await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    for send_ttype in given_ttypes:
-        writer.write(IAC + SB + TTYPE + IS +
-                     send_ttype.encode('ascii') +
-                     IAC + SE)
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.extra.ttype1 == 'ALPHA'
-    assert srv_instance.extra.ttype2 == 'BETA'
-    assert srv_instance.extra.ttype3 == 'GAMMA'
-    assert srv_instance.extra.ttype4 == 'ALPHA'
-    assert srv_instance.extra.TERM == 'ALPHA'
+        assert srv.last.extra.ttype1 == 'ALPHA'
+        assert srv.last.extra.ttype2 == 'BETA'
+        assert srv.last.extra.ttype3 == 'GAMMA'
+        assert srv.last.extra.ttype4 == 'ALPHA'
+        assert srv.last.extra.TERM == 'ALPHA'
 
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_repeated(
-        bind_host, unused_tcp_port):
-    """Test Server's callback method on_ttype() when value repeats. """
+        bind_host, unused_tcp_port, server):
+    """Test Server's callback method handle_recv_ttype() when value repeats. """
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'GAMMA')
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
         count = 1
 
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
             if self.count == len(given_ttypes):
-                _waiter.set_result(self)
+                _waiter.set()
             self.count += 1
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise,
+        await client.send_iac(WILL, TTYPE)
+        for send_ttype in given_ttypes:
+            await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    for send_ttype in given_ttypes:
-        writer.write(IAC + SB + TTYPE + IS +
-                     send_ttype.encode('ascii') +
-                     IAC + SE)
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.extra.ttype1 == 'ALPHA'
-    assert srv_instance.extra.ttype2 == 'BETA'
-    assert srv_instance.extra.ttype3 == 'GAMMA'
-    assert srv_instance.extra.ttype4 == 'GAMMA'
-    assert srv_instance.extra.TERM == 'GAMMA'
+        # verify,
+        assert srv.last.extra.ttype1 == 'ALPHA'
+        assert srv.last.extra.ttype2 == 'BETA'
+        assert srv.last.extra.ttype3 == 'GAMMA'
+        assert srv.last.extra.ttype4 == 'GAMMA'
+        assert srv.last.extra.TERM == 'GAMMA'
 
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_mud(
-        bind_host, unused_tcp_port):
-    """Test Server's callback method on_ttype() for MUD clients (MTTS). """
+        bind_host, unused_tcp_port, server):
+    """Test Server's callback method handle_recv_ttype() for MUD clients (MTTS). """
     # given
-    from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
-    _waiter = asyncio.Future()
+    _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'MTTS 137')
 
-    class ServerTestTtype(asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
         count = 1
 
-        def on_ttype(self, ttype):
-            super().on_ttype(ttype)
+        async def handle_recv_ttype(self, ttype):
+            await super().handle_recv_ttype(ttype)
             if self.count == len(given_ttypes):
-                _waiter.set_result(self)
+                _waiter.set()
             self.count += 1
 
-    await asynctelnet.create_server(
-        protocol_factory=ServerTestTtype,
-        host=bind_host, port=unused_tcp_port)
+    async with server(factory=ServerTestTtype, encoding=None) as srv, \
+            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
+            ClientTestTtype(conn, encoding=None) as client, \
+            reader(client):
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # exercise,
+        await client.send_iac(WILL, TTYPE)
+        for send_ttype in given_ttypes:
+            await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
-    # exercise,
-    writer.write(IAC + WILL + TTYPE)
-    for send_ttype in given_ttypes:
-        writer.write(IAC + SB + TTYPE + IS +
-                     send_ttype.encode('ascii') +
-                     IAC + SE)
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+            await srv.evt.wait()
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.extra.ttype1 == 'ALPHA'
-    assert srv_instance.extra.ttype2 == 'BETA'
-    assert srv_instance.extra.ttype3 == 'MTTS 137'
-    assert srv_instance.extra.TERM == 'BETA'
+        # verify,
+        assert srv.last.extra.ttype1 == 'ALPHA'
+        assert srv.last.extra.ttype2 == 'BETA'
+        assert srv.last.extra.ttype3 == 'MTTS 137'
+        assert srv.last.extra.TERM == 'BETA'

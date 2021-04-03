@@ -23,7 +23,7 @@ from functools import partial
 from .server_base import BaseServer
 from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
 from .stream import SetCharset
-from .telopt import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY
+from .telopt import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY, SEND
 
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
@@ -53,6 +53,7 @@ class TelnetServer(BaseServer):
         self._timer = None
 
         self.extra.term = term
+        self.extra.term_done = False
         self.extra.charset = kwargs.get('encoding', '')
         self.extra.cols = cols
         self.extra.rows = rows
@@ -187,11 +188,11 @@ class TelnetServer(BaseServer):
         """Callback for CHARSET response, :rfc:`2066`."""
         self.extra.charset = charset
 
-    def on_tspeed(self, rx, tx):
+    async def handle_recv_tspeed(self, rx, tx):
         """Callback for TSPEED response, :rfc:`1079`."""
         self.extra.tspeed = '{0},{1}'.format(rx, tx)
 
-    def on_ttype(self, ttype):
+    async def handle_recv_ttype(self, ttype):
         """Callback for TTYPE response, :rfc:`930`."""
         # TTYPE may be requested multiple times, we honor this system and
         # attempt to cause the client to cycle, as their first response may
@@ -205,12 +206,12 @@ class TelnetServer(BaseServer):
         if ttype:
             self.extra.TERM = ttype
 
-        _lastval = self.extra[f'ttype{self._ttype_count-1}']
+        _lastval = self.extra.get(f'ttype{self._ttype_count-1}', '')
 
         if key != 'ttype1' and ttype == self.extra.get('ttype1', None):
             # cycle has looped, stop
-            self.log.debug('ttype cycle stop at {0}: {1}, looped.'
-                           .format(key, ttype))
+            self.log.debug('ttype cycle stop at {0}: {1}, looped.' .format(key, ttype))
+            self.extra.term_done = True
 
         elif (not ttype or self._ttype_count > self.TTYPE_LOOPMAX):
             # empty reply string or too many responses!
@@ -226,12 +227,13 @@ class TelnetServer(BaseServer):
         elif (ttype == _lastval):
             self.log.debug('ttype cycle stop at {0}: {1}, repeated.'
                            .format(key, ttype))
+            self.extra.term_done = True
 
         else:
             self.log.debug('ttype cycle cont at {0}: {1}.'
                            .format(key, ttype))
             self._ttype_count += 1
-            self.writer.request_ttype()
+            await self.send_subneg(TTYPE, SEND)
 
     def on_xdisploc(self, xdisploc):
         """Callback for XDISPLOC response, :rfc:`1096`."""
