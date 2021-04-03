@@ -15,7 +15,6 @@ from tests.accessories import (
 
 def test_reader_instantiation_safety():
     """On instantiation, one of server or client must be specified."""
-    # given,
     def fn_encoding(incoming):
         return 'def-ENC'
 
@@ -42,7 +41,6 @@ async def test_telnet_reader_using_readline_unicode(
         bind_host, unused_tcp_port):
     """Ensure strict RFC interpretation of newlines in readline method."""
     # given
-    _waiter = asyncio.Future()
     given_expected = {
         'alpha\r\x00': 'alpha\r',
         'bravo\r\n': 'bravo\r\n',
@@ -87,7 +85,6 @@ async def test_telnet_reader_using_readline_bytes(
         bind_host, unused_tcp_port):
     """Ensure strict RFC interpretation of newlines in readline method."""
     # given
-    _waiter = asyncio.Future()
     given_expected = {
         b'alpha\r\x00': b'alpha\r',
         b'bravo\r\n': b'bravo\r\n',
@@ -132,7 +129,6 @@ async def test_telnet_reader_read_exactly_unicode(
         bind_host, unused_tcp_port):
     """Ensure TelnetReader.readexactly, especially IncompleteReadError."""
     # given
-    _waiter = asyncio.Future()
     given = '☭---------'
     given_partial = '💉-'
 
@@ -171,7 +167,6 @@ async def test_telnet_reader_read_exactly_bytes(
         bind_host, unused_tcp_port):
     """Ensure TelnetReader.readexactly, especially IncompleteReadError."""
     # given
-    _waiter = asyncio.Future()
     given = string.ascii_letters.encode('ascii')
     given_partial = b'zzz'
 
@@ -224,7 +219,6 @@ async def test_telnet_reader_read_beyond_limit_unicode(
         bind_host, unused_tcp_port):
     """Ensure ability to read(-1) beyond segment sizes of reader._limit."""
     # given
-    _waiter = asyncio.Future()
 
     limit = 10
 
@@ -252,7 +246,6 @@ async def test_telnet_reader_read_beyond_limit_bytes(
         bind_host, unused_tcp_port):
     """Ensure ability to read(-1) beyond segment sizes of reader._limit."""
     # given
-    _waiter = asyncio.Future()
 
     limit = 10
 
