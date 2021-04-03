@@ -295,14 +295,14 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
         negotiation completes, receiving the Telnet stream as an argument.
     :param logging.Logger log: target logger, if None is given, one is created
         using the namespace ``'asynctelnet.server'``.
-    :param str encoding: The default assumed encoding, or ``False`` to disable
-        unicode support.  Encoding may be negotiation to another value by
-        the client through NEW_ENVIRON :rfc:`1572` by sending environment value
-        of ``LANG``, or by any legal value for CHARSET :rfc:`2066` negotiation.
+    :param str encoding: The default encoding.
+        Use ``False`` or ``None`` to disable charset negotiation. ``False``
+        uses bytes-only encoding of the Telnet stream, while ``None`` uses
+        UTF-8.
 
-        The server's stream accepts and returns Unicode, unless this value
-        is explicitly set to ``None``.  In that case, the attached stream
-        interface is bytes-only.
+        Otherwise, the actual encoding may be negotiated via CHARSET
+        :rfc:`2066` negotiation. Use an empty string to use binary mode
+        until a charset is agreed to.
     :param str encoding_errors: Same meaning as :meth:`codecs.Codec.encode`.
         Default value is ``strict``.
     :param bool force_binary: When ``True``, the encoding specified is
@@ -316,13 +316,16 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
         until negotiated by NAWS :rfc:`1572`. Default value is 80 columns.
     :param int rows: Value returned for ``writer.get_extra_info('rows')``
         until negotiated by NAWS :rfc:`1572`. Default value is 25 rows.
+
+    This method does not return until cancelled.
+    """
+    """
     :param float connect_maxwait: If the remote end is not compliant, or
         otherwise confused by our demands, the shell continues anyway after the
         greater of this value has elapsed.  A client that is not answering
         option negotiation will delay the start of the shell by this amount.
-
-    This method does not return until cancelled.
     """
+
     protocol_factory = protocol_factory or TelnetServer
     l = await anyio.create_tcp_listener(local_host=host, local_port=port)
     log = log or logging.getLogger(__name__)
