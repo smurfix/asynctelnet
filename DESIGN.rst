@@ -445,7 +445,6 @@ If anybody can locate these documents, please forward them along.
   * bbs.pharcyde.org: CP437 encoding only, requires 80x24 window (synchronet_).
 
 
-
 It is hosted on github_.  Currently in development stage, feedback is
 encouraged. Feel free to make use of fork, pull and Issues services to
 report any bugs, grievances, or enhancements.
