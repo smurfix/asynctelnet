@@ -240,7 +240,7 @@ class TelnetTerminalClient(TelnetClient):
 
 @asynccontextmanager
 async def open_connection(host=None, port=23, *, log=None, client_factory=None,
-                         encoding='utf8', encoding_errors='replace',
+                         encoding=b'', encoding_errors='replace',
                          force_binary=False, term='unknown', cols=80, rows=25,
                          tspeed=(38400, 38400), xdisploc='',
                          # connect_minwait=2.0, connect_maxwait=3.0,
@@ -253,19 +253,19 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
     :param int port: Remote Internet host TCP port.
     :param logging.Logger log: target logger, if None is given, one is created
         using the namespace ``'asynctelnet.server'``.
-    :param client_base.BaseClient client_factory: Client connection class
+    :param BaseClient client_factory: Client connection class
         factory.  When ``None``, :class:`TelnetTerminalClient` is used when
         *stdin* is attached to a terminal, :class:`TelnetClient` otherwise.
-    :param str encoding: The default assumed encoding, or ``False`` to disable
-        unicode support.  This value is used for decoding bytes received by and
-        encoding bytes transmitted to the Server.  These values are preferred
-        in response to NEW_ENVIRON :rfc:`1572` as environment value ``LANG``,
-        and by CHARSET :rfc:`2066` negotiation.
+    :param str encoding: The default encoding.
+        Use ``False`` or ``None`` to disable charset negotiation. ``False``
+        uses bytes-only encoding of the Telnet stream, while ``None`` uses
+        UTF-8.
 
-        The server's attached ``reader, writer`` streams accept and return
-        unicode, unless this value explicitly set ``False``.  In that case, the
-        attached streams interfaces are bytes-only.
+        Otherwise, the actual encoding may be negotiated via CHARSET
+        :rfc:`2066` negotiation. Use an empty string to use binary mode
+        until a charset is agreed to.
 
+        The default is the charset from the current locale.
     :param str term: Terminal type sent for requests of TTYPE, :rfc:`930` or as
         Environment value TERM by NEW_ENVIRON negotiation, :rfc:`1672`.
     :param int cols: Client window dimension sent as Environment value COLUMNS
@@ -306,6 +306,9 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
         option negotiation will delay the start of the shell by this amount.
     """
     log = log or logging.getLogger(__name__)
+    if encoding == b'':
+        import locale
+        encoding = locate.getdefaultencoding()
 
     if client_factory is None:
         client_factory = TelnetClient
