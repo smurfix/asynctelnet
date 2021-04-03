@@ -6,6 +6,7 @@ import anyio
 import socket
 
 from asynctelnet.server import server_loop,TelnetServer 
+from asynctelnet.accessories import AttrDict
 
 @pytest.fixture(scope="module", params=['127.0.0.1'])
 def bind_host(request):
@@ -20,13 +21,20 @@ def _unused_tcp_port():
 
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
+    res = AttrDict()
+
     @contextlib.asynccontextmanager
     async def mgr(factory=TestServer, shell=testshell, **kw):
+        async def myshell(client):
+            res.last = client
+            await shell(client)
+
         async with anyio.create_task_group() as tg:
             evt=anyio.Event()
-            await tg.spawn(partial(server_loop, protocol_factory=factory, shell=shell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            await tg.spawn(partial(server_loop, protocol_factory=factory, shell=myshell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
             await evt.wait()
-            yield unused_tcp_port
+            res.tcp_port = unused_tcp_port
+            yield res
             await tg.cancel_scope.cancel()
     return mgr
 
