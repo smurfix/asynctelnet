@@ -71,6 +71,21 @@ class TelnetClient(BaseClient):
         """Called after setting up."""
         await super().setup()
 
+        # No terminal? don't try.
+        if await self.local_option(TTYPE, bool(self.__extra['term'])):
+            async with anyio.create_task_group() as tg:
+                await tg.spawn(self.remote_option, SGA, True)
+                await tg.spawn(self.remote_option, ECHO, True)
+                await tg.spawn(self.remote_option, BINARY, True)
+                await tg.spawn(self.local_option, NEW_ENVIRON, True)
+                await tg.spawn(self.local_option, NAWS, True)
+                await tg.spawn(self.local_option, BINARY, True)
+                if self.__extra["charset"]:
+                    await tg.spawn(self.local_option, CHARSET, True)
+                else:
+                    await tg.spawn(self.remote_option, CHARSET, True)
+        # 
+
         # Wire extended rfc callbacks for requests of
         # terminal attributes, environment values, etc.
         for (opt, func) in (
@@ -82,6 +97,17 @@ class TelnetClient(BaseClient):
                 (CHARSET, self.send_charset),
                 ):
             self.set_ext_send_callback(opt, func)
+
+    async def handle_do_new_environ(self):
+        return True
+    async def handle_do_naws(self):
+        return True
+    async def handle_will_sga(self):
+        return True
+    async def handle_will_echo(self):
+        return True
+    async def handle_do_ttype(self):
+        return bool(self.__extra['term'])
 
     async def send_ttype(self):
         """Callback for responding to TTYPE requests."""

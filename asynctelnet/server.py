@@ -74,13 +74,20 @@ class TelnetServer(BaseServer):
         # No terminal? don't try.
         if await self.remote_option(TTYPE, True):
             async with anyio.create_task_group() as tg:
-                await tg.spawn(self.local_option,SGA,True)
-                await tg.spawn(self.local_option,ECHO,True)
-                await tg.spawn(self.local_option,BINARY,True)
-                await tg.spawn(self.remote_option,NEW_ENVIRON,True)
-                await tg.spawn(self.remote_option,NAWS,True)
-                await tg.spawn(self.remote_option,BINARY,True)
-                await tg.spawn(self.request_charset("UTF-8"))
+                await tg.spawn(self.local_option, SGA, True)
+                await tg.spawn(self.local_option, ECHO, True)
+                await tg.spawn(self.local_option, BINARY, True)
+                await tg.spawn(self.remote_option, NEW_ENVIRON, True)
+                await tg.spawn(self.remote_option, NAWS, True)
+                await tg.spawn(self.remote_option, BINARY, True)
+                if isinstance(self.__extra["charset"], str):
+                    if self.__extra["charset"]:
+                        # We have a charset we want to use. Send WILL.
+                        await tg.spawn(self.local_option, CHARSET, True)
+                    else:
+                        # We don't have a charset we want to use. Ask the
+                        # remote to send us a list.
+                        await tg.spawn(self.remote_option, CHARSET, True)
 
         # TODO request environment
 
@@ -94,6 +101,17 @@ class TelnetServer(BaseServer):
         # otherwise, the less CHARSET negotiation may be found in many
         # East-Asia BBS and Western MUD systems.
         #return self.get_extra_info('charset') or self.default_encoding
+
+    async def handle_will_new_environ(self):
+        return True
+    async def handle_will_naws(self):
+        return True
+    async def handle_do_sga(self):
+        return True
+    async def handle_do_echo(self):
+        return True
+    async def handle_will_ttype(self):
+        return bool(self.__extra['term'])
 
     @asynccontextmanager
     async def with_timeout(self, duration=-1):
