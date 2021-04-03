@@ -58,7 +58,7 @@ async def test_telnet_server_on_ttype_beyond_max(
     # given
     from asynctelnet.telopt import IAC, WILL, SB, SE, IS, TTYPE
     _waiter = asyncio.Future()
-    given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'DETLA',
+    given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'DELTA',
                     'EPSILON', 'ZETA', 'ETA', 'THETA',
                     'IOTA', 'KAPPA', 'LAMBDA', 'MU')
 
