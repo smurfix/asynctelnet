@@ -278,13 +278,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if a negotiation is in progress.
         """
         # XXX KEEP IN SYNC WITH NEXT METHOD
+        # self.log.debug("LOC:%s %s %s",option,value,force)
 
         val = self._local_option.get(option, None)
         if value is not None and isinstance(val, anyio.abc.Event):
             raise InProgressError(DO,option)
-#       while isinstance(val, anyio.abc.Event):
-#           await val.wait()
-#           val = self._local_option[option]
         if (val is value or value is None) and not force:
             return value
         if value is not None:
@@ -355,7 +353,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     @asynccontextmanager
     async def _ctx(self):
-        # Set default callback handlers to local methods.  A base protocol
+        # Main context handler. Called by our CtxObj mix-in.
+
         await self.reset()
 
         async with anyio.create_task_group() as tg:
@@ -364,12 +363,19 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             self._read_task = await spawn(tg,self._receive_loop)
 
             try:
+                self.log.debug("Start setup")
                 await self.setup()
+                self.log.debug("Finished setup")
                 yield self
             finally:
-                await self.teardown()
-                await self._read_task.cancel()
-                await tg.cancel_scope.cancel()
+                self.log.debug("Start teardown")
+                died = True
+                with anyio.move_on_after(2):
+                    await self.teardown()
+                    died = False
+                self.log.debug("%s teardown", "Interrupted" if died else "Finished")
+                self._read_task.cancel()
+                tg.cancel_scope.cancel()
 
     async def setup(self):
         """
@@ -416,7 +422,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             try:
                 b = await self._stream.receive(4096)
             except (anyio.EndOfStream,anyio.ClosedResourceError):
-                self.log.debug("IN: EOF")
+                # self.log.debug("IN: EOF")
                 await q.aclose()
                 return
             # self.log.debug("IN: DATA: %r", b)
@@ -426,6 +432,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     buf.append(x)
                 if self._read_callback is not None:
                     cb,self._read_callback = self._read_callback,None
+                    # self.log.debug("RCB %r %r",cb,buf)
                     if buf:
                         # self.log.debug("IN: Q1: %r", buf)
                         await q.send(buf)
@@ -801,7 +808,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     async def _recv_opt(self,cmd,opt):
         opt = Opt(opt)
-        self.log.debug('recv IAC %s %s', Cmd(cmd).name, opt.name)
         handler = self._get_handler(cmd,opt)
         if cmd == DO:
             opts = self._local_option
