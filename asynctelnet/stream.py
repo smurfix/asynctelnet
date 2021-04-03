@@ -1517,7 +1517,7 @@ class TelnetStream(BaseTelnetStream):
         await self.send_subnet(TSPEED, SEND)
         return True
 
-    async def handle_will_environ(self):
+    async def handle_will_new_environ(self):
         """
         Request sub-negotiation NEW_ENVIRON, :rfc:`1572`.
 
@@ -1839,11 +1839,11 @@ class TelnetStream(BaseTelnetStream):
         self.log.warning('Terminal size requested, sending 80x24.')
         return 80, 24
 
-    async def handle_recv_environ(self, env):
+    async def handle_recv_new_environ(self, env):
         """Receive environment variables as dict, :rfc:`1572`."""
         self.log.debug('Environment values are {!r}'.format(env))
 
-    async def handle_send_client_environ(self, keys):
+    async def handle_send_client_new_environ(self, keys):
         """
         Send environment variables as dict, :rfc:`1572`.
 
@@ -1854,7 +1854,7 @@ class TelnetStream(BaseTelnetStream):
         self.log.debug('Environment values requested, sending {{}}.')
         return dict()
 
-    async def handle_send_server_environ(self):
+    async def handle_send_server_new_environ(self):
         """Server requests environment variables as list, :rfc:`1572`."""
         self.log.debug('Environment values offered, requesting [].')
         return []
@@ -1895,12 +1895,11 @@ class TelnetStream(BaseTelnetStream):
 
     async def handle_subneg_tspeed(self, buf):
         """Callback handles IAC-SB-TSPEED-<buf>-SE."""
-        cmd = buf.popleft()
-        opt = buf.popleft()
-        assert cmd == TSPEED, (cmd, name_command(cmd))
+        opt,buf = buf[0],buf[1:]
+
         assert opt in (IS, SEND), opt
         opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)
-        self.log.debug('recv %s %s: %r', name_command(cmd), opt_kind, b''.join(buf))
+        self.log.debug('recv %s %s: %r', name_command(cmd), opt_kind, buf)
 
         if opt == IS:
             assert self.server, f'SE: cannot recv from server: {name_command(cmd)} {opt_kind}'
@@ -1936,17 +1935,15 @@ class TelnetStream(BaseTelnetStream):
 
     async def handle_subneg_xdisploc(self, buf):
         """Callback handles IAC-SB-XIDISPLOC-<buf>-SE."""
-        cmd = buf.popleft()
-        opt = buf.popleft()
+        opt,buf = buf[0],buf[1:]
 
-        assert cmd == XDISPLOC, (cmd, name_command(cmd))
         assert opt in (IS, SEND), opt
         opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)
-        self.log.debug('recv %s %s: %r', name_command(cmd), opt_kind, b''.join(buf))
+        self.log.debug('recv %s %s: %r', name_command(cmd), opt_kind, buf)
 
         if opt == IS:
             assert self.server, f'SE: cannot recv from server: {name_command(cmd)} {opt}'
-            xdisploc_str = b''.join(buf).decode('ascii')
+            xdisploc_str = buf.decode('ascii')
             self.log.debug('recv IAC SB XDISPLOC IS %r IAC SE', xdisploc_str)
             await self._ext_callback[XDISPLOC](xdisploc_str)
         elif opt == SEND:
@@ -1957,24 +1954,25 @@ class TelnetStream(BaseTelnetStream):
 
     async def handle_subneg_ttype(self, buf):
         """Callback handles IAC-SB-TTYPE-<buf>-SE."""
-        assert cmd == TTYPE, name_command(cmd)
+        opt,buf = buf[0],buf[1:]
+
         assert opt in (IS, SEND), opt
         opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)
-        self.log.debug('recv %s %s: %r', name_command(cmd), opt_kind, b''.join(buf))
+        self.log.debug('recv %s %s: %r', TTYPE, opt_kind, join(buf)
 
         if opt == IS:
-            assert self.server, f'SE: cannot recv from server: {name_command(cmd)} {opt}'
-            ttype_str = b''.join(buf).decode('ascii')
+            assert self.server, f'SE: cannot recv from server: TTYPE {opt}'
+            ttype_str = buf.decode('ascii')
             self.log.debug('recv IAC SB TTYPE IS %r', ttype_str)
             await self._ext_callback[TTYPE](ttype_str)
 
         elif opt == SEND:
-            assert self.client, f'SE: cannot recv from client: {name_command(cmd)} {opt}'
+            assert self.client, f'SE: cannot recv from client: TTYPE {opt}'
             ttype_str = (await self._ext_send_callback[TTYPE]()).encode('ascii')
             self.log.debug('send IAC SB TTYPE IS %r IAC SE', ttype_str)
             await self.send_subneg(TTYPE, IS + ttype_str)
 
-    async def handle_subneg_environ(self, buf):
+    async def handle_subneg_new_environ(self, buf):
         """
         Callback handles (IAC, SB, NEW_ENVIRON, <buf>, SE), :rfc:`1572`.
 
@@ -1988,17 +1986,18 @@ class TelnetStream(BaseTelnetStream):
         requested from the server; or None if only VAR and/or USERVAR
         is requested, indicating to "send them all".
         """
-        opt = buf[0]
+        opt,buf = buf[0],buf[1:]
         opt_kind = SubT(opt).name
         self.log.debug('recv SB Env %s: %r', opt_kind, buf)
 
-        env = _decode_env_buf(buf,1)
+        env = _decode_env_buf(buf)
 
         if opt in (IS, INFO):
             assert self.server, ('SE: cannot recv from server: {} {}'
-                                 .format(name_command(cmd), opt_kind,))
+                                 .format(name_command(NEW_ENVIRON), opt_kind,))
             if env:
                 await self._ext_callback[cmd](env)
+
         elif opt == SEND:
             assert self.client, ('SE: cannot recv from client: {} {}'
                                  .format(name_command(cmd), opt_kind))
@@ -2011,8 +2010,7 @@ class TelnetStream(BaseTelnetStream):
 
     async def handle_subneg_sndloc(self, buf):
         """Fire callback for IAC-SB-SNDLOC-<buf>-SE (:rfc:`779`)."""
-        assert buf.popleft() == SNDLOC
-        location_str = b''.join(buf).decode('ascii')
+        location_str = buf.decode('ascii')
         await self._ext_callback[SNDLOC](location_str)
 
     async def _send_naws(self):
@@ -2050,7 +2048,7 @@ class TelnetStream(BaseTelnetStream):
         #
         #    cols, rows = ((256 * buf[0]) + buf[1],
         #                  (256 * buf[2]) + buf[3])
-        cols, rows = struct.unpack('!HH', b''.join(buf))
+        cols, rows = struct.unpack('!HH', buf)
         self.log.debug('recv IAC SB NAWS (cols={0}, rows={1}) IAC SE'
                        .format(cols, rows))
 
