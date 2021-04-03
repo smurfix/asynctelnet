@@ -980,9 +980,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self.log.debug("send IAC SB %s %r",opt.name,buf)
         await self.send(bytes([IAC,SB,opt])+buf+bytes([IAC,SE]), escape_iac=False)
 
-    send_subnegotiation=send_subneg
-
-
     async def send_iac(self, *bufs):
         """
         Send a command starting with IAC (byte value 0xFF).
