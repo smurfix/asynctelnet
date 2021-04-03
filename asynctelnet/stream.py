@@ -6,6 +6,7 @@ import logging
 import struct
 import sys
 import codecs
+import inspect
 from enum import Enum, IntEnum
 from typing import Optional,Union,Iterator,Tuple,Mapping
 from contextlib import asynccontextmanager
@@ -309,13 +310,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if a negotiation is in progress.
         """
         # XXX KEEP IN SYNC WITH PREVIOUS METHOD
+        # self.log.debug("REM:%s %s %s",option,value,force)
 
         val = self._remote_option.get(option, None)
         if value is not None and isinstance(val, anyio.abc.Event):
             raise InProgressError(DO,option)
-#       while isinstance(val, anyio.abc.Event):
-#           await val.wait()
-#           val = self._remote_option[option]
+        if (val is value or value is None) and not force:
+            return value
         if value is not None:
             if val is value and (force is None or (force is False and val)):
                 return value
@@ -327,6 +328,25 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             while isinstance(val := self._remote_option[option], anyio.abc.Event):
                 await val.wait()
         return val
+
+    def local_status(self, option:int):
+        """
+        Get out option, i.e. return True if we got DO.
+        """
+        val = self._local_option.get(option, None)
+        if isinstance(val, anyio.abc.Event):
+            raise InProgressError(DO, option)
+        return val
+
+    def remote_status(self, option:int):
+        """
+        Get their option, i.e. return True if we got WILL.
+        """
+        val = self._remote_option.get(option, None)
+        if isinstance(val, anyio.abc.Event):
+            raise InProgressError(WILL, option)
+        return val
+
 
     @asynccontextmanager
     async def _ctx(self):
@@ -826,22 +846,31 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         else:
             raise RuntimeError("? received %r" % cmd)
 
-        opts[opt], evt = val, opts.get(opt)
+        opts[opt], evt = val, opts.get(opt, None)
+        self.log.debug('recv IAC %s %s old:%s', Cmd(cmd).name, opt.name, evt)
         try:
             nval = await handler()
-            if isinstance(nval, bool):
-                opts[opt] = val = nval
         except BaseException:
             opts[opt] = None
             # Error. Reply with rejection.
-            await self.send_iac(reply[0], opt)
+            with anyio.move_on_after(0.5, shield=True):
+                await self.send_iac(reply[0], opt)
             raise
-        else:
-            if hasattr(evt,"is_set"): # isinstance(evt, anyio.abc.Event):
-                await evt.set()
-            elif evt is not val:
-                # Changed value. Reply with the new state.
-                await self.send_iac(reply[val], opt)
+
+        if isinstance(nval, bool):
+            opts[opt] = val = nval
+        elif inspect.iscoroutine(nval):
+            opts[opt] = val
+
+        if isinstance(evt, anyio.abc.Event):
+            # we have an open request, so this is a reply, so no answer sent
+            await evt.set()
+        elif evt is not val:
+            # State change. Reply with the new state.
+            await self.send_iac(reply[val], opt)
+
+        if inspect.iscoroutine(nval):
+            await nval
 
 
     def _get_handler(self, cmd, opt):
@@ -1364,43 +1393,39 @@ class TelnetStream(BaseTelnetStream):
         except KeyError:
             return getattr(self,"handle_slc_"+func.name.lower(), None)
 
-    async def request_status(self):
+    async def handle_will_status(self):
         """
         Send ``IAC-SB-STATUS-SEND`` sub-negotiation (:rfc:`859`).
 
         This method may only be called after ``IAC-WILL-STATUS`` has been
         received. Returns True if status request was sent.
         """
-        if not self._remote_option.enabled(STATUS):
+
+        if not self.remote_status(STATUS):
             self.log.debug('cannot send SB STATUS SEND '
                            'without receipt of WILL STATUS')
-        elif not self.pending_option.enabled(SB + STATUS):
-            self.log.debug('send IAC SB STATUS SEND IAC SE')
-            await self.send_subneg(STATUS,SEND)
-            return True
-        else:
-            self.log.info('cannot send SB STATUS SEND, request pending.')
-        return False
+            return False
 
-    async def request_tspeed(self):
+        self.log.debug('send IAC SB STATUS SEND IAC SE')
+        await self.send_subneg(STATUS,SEND)
+        return True
+
+    async def handle_will_tspeed(self):
         """
         Send IAC-SB-TSPEED-SEND sub-negotiation, :rfc:`1079`.
 
         This method may only be called after ``IAC-WILL-TSPEED`` has been
         received. Returns True if TSPEED request was sent.
         """
-        if not self._remote_option.enabled(TSPEED):
+        if not self.remote_status(TSPEED):
             self.log.debug('cannot send SB TSPEED SEND '
                            'without receipt of WILL TSPEED')
-        elif not self.pending_option.enabled(SB + TSPEED):
-            self.log.debug('send IAC SB TSPEED SEND IAC SE')
-            await self.send_subnet(TSPEED, SEND)
-            return True
-        else:
-            self.log.debug('cannot send SB TSPEED SEND, request pending.')
-        return False
+            return False
+        self.log.debug('send IAC SB TSPEED SEND IAC SE')
+        await self.send_subnet(TSPEED, SEND)
+        return True
 
-    async def request_environ(self):
+    async def handle_will_environ(self):
         """
         Request sub-negotiation NEW_ENVIRON, :rfc:`1572`.
 
@@ -1432,10 +1457,10 @@ class TelnetStream(BaseTelnetStream):
                 response.extend([VAR])
                 response.extend([_escape_environ(env_key.encode('ascii'))])
         self.log.debug('request_environ: {!r}'.format(b''.join(response)))
-        await self.send_subneg(NEW_ENVIRON, b''.join(response))
+        await self.send_subneg(NEW_ENVIRON, *response)
         return True
 
-    async def request_xdisploc(self):
+    async def handle_will_xdisploc(self):
         """
         Send XDISPLOC, SEND sub-negotiation, :rfc:`1086`.
 
@@ -1443,18 +1468,16 @@ class TelnetStream(BaseTelnetStream):
         """
         assert self.server, (
             'SB XDISPLOC SEND may only be sent by server end')
-        if not self._remote_option.enabled(XDISPLOC):
+        if not self.remote_status(XDISPLOC):
             self.log.debug('cannot send SB XDISPLOC SEND'
                            'without receipt of WILL XDISPLOC')
-        if not self.pending_option.enabled(SB + XDISPLOC):
-            self.log.debug('send IAC SB XDISPLOC SEND IAC SE')
-            await self.send_subneg(XDISPLOC,SEND)
-            return True
+            return False
 
-        self.log.debug('cannot send SB XDISPLOC SEND, request pending.')
-        return False
+        self.log.debug('send IAC SB XDISPLOC SEND IAC SE')
+        await self.send_subneg(XDISPLOC,SEND)
+        return True
 
-    async def request_ttype(self):
+    async def handle_will_ttype(self):
         """
         Send TTYPE SEND sub-negotiation, :rfc:`930`.
 
@@ -1462,18 +1485,15 @@ class TelnetStream(BaseTelnetStream):
         """
         assert self.server, (
             'SB TTYPE SEND may only be sent by server end')
-        if not self._remote_option.enabled(TTYPE):
+        if not self.remote_status(TTYPE):
             self.log.debug('cannot send SB TTYPE SEND'
                            'without receipt of WILL TTYPE')
-        if not self.pending_option.enabled(SB + TTYPE):
-            self.log.debug('send IAC SB TTYPE SEND IAC SE')
-            await self.send_subneg(TTYPE, SEND)
-            return True
-        else:
-            self.log.debug('cannot send SB TTYPE SEND, request pending.')
         return False
+        self.log.debug('send IAC SB TTYPE SEND IAC SE')
+        await self.send_subneg(TTYPE, SEND)
+        return True
 
-    async def request_forwardmask(self, fmask=None):
+    async def handle_will_forwardmask(self, fmask=None):
         """
         Request the client forward their terminal control characters.
 
@@ -1483,30 +1503,29 @@ class TelnetStream(BaseTelnetStream):
         """
         assert self.server, (
             'DO FORWARDMASK may only be sent by server end')
-        if not self._remote_option.enabled(LINEMODE):
+        if not self.remote_status(LINEMODE):
             self.log.debug('cannot send SB LINEMODE DO'
                            'without receipt of WILL LINEMODE')
-        else:
-            if fmask is None:
-                opt = SB + LINEMODE + slc.LMODE_FORWARDMASK
-                forwardmask_enabled = (
-                    self.server and self._local_option.get(opt, False)
-                ) or self._remote_option.get(opt, False)
-                fmask = slc.generate_forwardmask(
-                    binary_mode=self._local_option.enabled(BINARY),
-                    tabset=self.slctab, ack=forwardmask_enabled)
+            return False
 
-            assert isinstance(fmask, slc.Forwardmask), fmask
+        if fmask is None:  # TODO
+            opt = SB + LINEMODE + slc.LMODE_FORWARDMASK
+            forwardmask_enabled = (
+                self.server and self._local_option.get(opt, False)
+            ) or self._remote_option.get(opt, False)
+            fmask = slc.generate_forwardmask(
+                binary_mode=self._local_option.enabled(BINARY),
+                tabset=self.slctab, ack=forwardmask_enabled)
 
-            self.log.debug('send IAC SB LINEMODE DO LMODE_FORWARDMASK::')
-            for maskbit_descr in fmask.description_table():
-                self.log.debug('  {}'.format(maskbit_descr))
-            self.log.debug('send IAC SE')
+        assert isinstance(fmask, slc.Forwardmask), fmask
 
-            await self.send_subneg(LINEMODE + DO + slc.LMODE_FORWARDMASK, fmask.value)
+        self.log.debug('send IAC SB LINEMODE DO LMODE_FORWARDMASK::')
+        for maskbit_descr in fmask.description_table():
+            self.log.debug('  {}'.format(maskbit_descr))
+        self.log.debug('send IAC SE')
 
-            return True
-        return False
+        await self.send_subneg(LINEMODE + DO + slc.LMODE_FORWARDMASK, fmask.value)
+
 
     async def send_lineflow_mode(self):
         """Send LFLOW mode sub-negotiation, :rfc:`1372`.
@@ -1822,8 +1841,6 @@ class TelnetStream(BaseTelnetStream):
             response = [IAC, SB, TSPEED, IS, brx, b',', btx, IAC, SE]
             self.log.debug('send: IAC SB TSPEED IS %r,%r IAC SE', brx, btx)
             await self.send_subneg(TSPEED, IS + brx + b',' + btx)
-            if self.pending_option.enabled(WILL + TSPEED):
-                self.pending_option[WILL + TSPEED] = False
 
     async def handle_subneg_xdisploc(self, buf):
         """Callback handles IAC-SB-XIDISPLOC-<buf>-SE."""
@@ -1845,8 +1862,6 @@ class TelnetStream(BaseTelnetStream):
             xdisploc_str = (await self._ext_send_callback[XDISPLOC]()).encode('ascii')
             self.log.debug('send IAC SB XDISPLOC IS %r IAC SE', xdisploc_str)
             await self.send_subneg(XDISPLOC,IS+xdisploc_str)
-            if self.pending_option.enabled(WILL + XDISPLOC):
-                self.pending_option[WILL + XDISPLOC] = False
 
     async def handle_subneg_ttype(self, buf):
         """Callback handles IAC-SB-TTYPE-<buf>-SE."""
@@ -1860,13 +1875,12 @@ class TelnetStream(BaseTelnetStream):
             ttype_str = b''.join(buf).decode('ascii')
             self.log.debug('recv IAC SB TTYPE IS %r', ttype_str)
             await self._ext_callback[TTYPE](ttype_str)
+
         elif opt == SEND:
             assert self.client, f'SE: cannot recv from client: {name_command(cmd)} {opt}'
             ttype_str = (await self._ext_send_callback[TTYPE]()).encode('ascii')
             self.log.debug('send IAC SB TTYPE IS %r IAC SE', ttype_str)
             await self.send_subneg(TTYPE, IS + ttype_str)
-            if self.pending_option.enabled(WILL + TTYPE):
-                self.pending_option[WILL + TTYPE] = False
 
     async def handle_subneg_environ(self, buf):
         """
@@ -2049,8 +2063,7 @@ class TelnetStream(BaseTelnetStream):
 
     async def _send_status(self):
         """Callback responds to IAC SB STATUS SEND, :rfc:`859`."""
-        if not (self.pending_option.enabled(WILL + STATUS) or
-                self._local_option.enabled(STATUS)):
+        if not self.local_status(STATUS):
             raise ValueError('Only sender of IAC WILL STATUS '
                              'may reply by IAC SB STATUS IS.')
 
@@ -2179,7 +2192,7 @@ class TelnetStream(BaseTelnetStream):
             slc_def = slc.SLC(flag, value)
             self._slc_process(func, slc_def)
         await self._slc_end()
-        await self.request_forwardmask()
+        # await self.request_forwardmask()  # TODO
 
     async def _slc_end(self):
         """Transmit SLC commands buffered by :meth:`_slc_send`."""
