@@ -18,23 +18,6 @@ rather shoe-horned, main() should declare keywords.
 **this is completed for server, copy to client**
 
 
-wait_for?
----------
-
-We need a way to wish to wait for a state. For example, our client shell might await
-until local_echo is False, or remote_option[ECHO] is True to change terminal state
-to reflect it. A function wait_for, receiving a function that returns True when state
-is met, will be called back continuously after each block of data received containing
-an IAC command byte, but the boiler code simply returns the waiter.
-
-This should allow us to spray the client with feature requests, and await the
-completion of their negotiation, especially for things like LINEMODE that might
-have many state changes, this allows asyncio to solve the complex "awaiting
-many future states in parallel" event loop easily
-
--- just accept a future, and on each state change, call an internal function
-that checks for equality for the parameters given, and when true, set .done()
-
 BaseTelnetProtocol
 ------------------
 
@@ -62,20 +45,6 @@ interface designed.
     comprehensive are our tests, and how well is our SLC working?
   - IAC-SB-LINEMODE-DO-FORWARDMASK is unhandled, raises NotImplementedError
 
-TelnetWriter and TelnetServer
------------------------------
-
-feed_byte called by telnet server should be a coroutine
-receiving data by send. It should yield out-of-bound values, None otherwise?
-'is_oob', or 'slc_received', etc.?  We're still considering ... the state still
-requires tracking, but this would turn multiple function calls into a .send()
-into generator, better for state loops or bandwidth, maybe?
-
-handle_xon resumes writing in a way that is not obvious -- we should
-be using the true 'pause_writing' and 'resume_writing' methods of our
-base protocol.  The given code was written before these methods became
-available in asyncio (then, tulip).  We need to accommodate the new
-availabilities.
 
 On STATUS rfc
 -------------
@@ -118,15 +87,28 @@ CHARSET, toggling in and outbinary, thereby enabling UTF8 input/output, etc.
 UTF8
 ====
 
-CHARSET (`rfc-2066`_) specifies a codepage, not an encoding. At the time, this
-was more or less limited to specifying the codepage used to display bytes of the
-range 127 through 255.  Unimplemented in BSD client, and generally found
-implemented only in recent MUD client (Atlantis_) and servers. Most common
-values are: ASCII, UTF8, BIG5, and LATIN1.
+Strictly speaking, CHARSET (`rfc-2066`_) specifies a codepage, not an
+encoding. However, with the transition to UTF-8 this distinction is no
+longer true.
+
+At the time, CHARSET was more or less limited to specifying the codepage
+used to display bytes of the range 127 through 255.  It was not implemented
+in BSD client, and generally only in recent MUD client (Atlantis_) and
+servers.
 
 The default preferred encoding for clients that negotiate BINARY but not
 CHARSET, such as the BSD client, is defined by the TelnetServer keyword
-argument ``default_encoding`` ('UTF8' by default).
+argument ``encoding`` ('UTF8' by default). The client side defaults to the
+current locale's encoding. Special values indicate whether to deny encoding
+negotiation and/or use binary strings:
+
+======= ======== ===================
+Setting Encoding CHARSET negotiation
+======= ======== ===================
+ False   bytes   disabled
+  None   UTF-8   disabled
+   ''    bytes   enabled
+======= ======== ===================
 
 The example shell *telsh* allows changing encoding on the fly by setting the
 'CHARSET' session environment value at the *telsh* command prompt by issuing
@@ -164,8 +146,8 @@ interfaces was done using the Telnet protocol prior to the mass-adoption of
 the World Wide Web in the mid 1990's, when SSH became more commonplace.
 
 Naturally, Telnet as a code project inevitably must handle a wide variety of
-connecting clients and hosts, due to limitations of their networking Transport
-, Terminals, their drivers, and host operating systems.
+connecting clients and hosts, due to limitations of their networking
+transport, terminals, their drivers, and host operating systems.
 
 This implementation aims to implement only those capabilities "found in the
 wild", and includes, or does not include, mechanisms that are suitable only
