@@ -337,7 +337,7 @@ async def open_connection(host=None, port=23, *, log=None, client_factory=None,
     log = log or logging.getLogger(__name__)
     if encoding == b'':
         import locale
-        encoding = locate.getdefaultencoding()
+        encoding = locale.getpreferredencoding()
 
     if client_factory is None:
         client_factory = TelnetClient
