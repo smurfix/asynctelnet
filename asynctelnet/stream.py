@@ -2047,12 +2047,12 @@ class TelnetStream(BaseTelnetStream):
                              'first receiving IAC DO LFLOW.')
         opt = buf.popleft()
         if opt in (LFLOW_OFF, LFLOW_ON):
-            self.lflow = opt is LFLOW_ON
+            self.lflow = opt == LFLOW_ON
             self.log.debug('LFLOW (toggle-flow-control) {}'.format(
                 'ON' if self.lflow else 'OFF'))
 
         elif opt in (LFLOW_RESTART_ANY, LFLOW_RESTART_XON):
-            self.xon_any = opt is LFLOW_RESTART_XON
+            self.xon_any = opt == LFLOW_RESTART_XON
             self.log.debug('LFLOW (toggle-flow-control) {}'.format(
                 'RESTART_ANY' if self.xon_any else 'RESTART_XON'))
 
