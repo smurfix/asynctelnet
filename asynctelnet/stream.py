@@ -446,7 +446,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             buf = bytearray()
             try:
                 b = await self._stream.receive(4096)
-            except (anyio.EndOfStream,anyio.ClosedResourceError):
+            except (anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError):
                 # self.log.debug("IN: EOF")
                 await q.aclose()
                 return
