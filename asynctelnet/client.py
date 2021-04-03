@@ -14,13 +14,13 @@ from contextlib import asynccontextmanager
 from functools import partial
 
 # local imports
-from . import accessories
-from . import client_base
+from .accessories import repr_mapping, make_logger, _DEFAULT_LOGFMT, function_lookup
+from .client_base import BaseClient
 
 __all__ = ('TelnetClient', 'TelnetTerminalClient', 'open_connection')
 
 
-class TelnetClient(client_base.BaseClient):
+class TelnetClient(BaseClient):
     """
     Telnet client that supports all common options.
 
@@ -326,11 +326,11 @@ def main():
     kwargs = _transform_args(_get_argument_parser().parse_args())
     config_msg = (
         'Client configuration: {key_values}'
-        .format(key_values=accessories.repr_mapping(kwargs)))
+        .format(key_values=repr_mapping(kwargs)))
     host = kwargs.pop('host')
     port = kwargs.pop('port')
 
-    log = kwargs['log'] = accessories.make_logger(
+    log = kwargs['log'] = make_logger(
         name=__name__,
         loglevel=kwargs.pop('loglevel'),
         logfile=kwargs.pop('logfile'),
@@ -353,7 +353,7 @@ def _get_argument_parser():
                         help='terminal type')
     parser.add_argument('--loglevel', default='warn',
                         help='log level')
-    parser.add_argument('--logfmt', default=accessories._DEFAULT_LOGFMT,
+    parser.add_argument('--logfmt', default=_DEFAULT_LOGFMT,
                         help='log format')
     parser.add_argument('--logfile',
                         help='filepath')
@@ -386,7 +386,7 @@ def _transform_args(args):
         'logfmt': args.logfmt,
         'encoding': args.encoding,
         'tspeed': (args.speed, args.speed),
-        'shell': accessories.function_lookup(args.shell),
+        'shell': function_lookup(args.shell),
         'term': args.term,
         'force_binary': args.force_binary,
         'encoding_errors': args.encoding_errors,
