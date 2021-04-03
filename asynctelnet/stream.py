@@ -1958,7 +1958,7 @@ class TelnetStream(BaseTelnetStream):
 
         assert opt in (IS, SEND), opt
         opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)
-        self.log.debug('recv %s %s: %r', TTYPE, opt_kind, join(buf)
+        self.log.debug('recv %s %s: %r', TTYPE, opt_kind, buf)
 
         if opt == IS:
             assert self.server, f'SE: cannot recv from server: TTYPE {opt}'
