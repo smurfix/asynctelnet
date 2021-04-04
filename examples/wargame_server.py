@@ -6,7 +6,7 @@ async def shell(tcp):
     async with asynctelnet.TelnetServer(tcp) as stream:
         # this will fail if no charset has been negotiated
         await stream.send('\r\nWould you like to play a game? ')
-        inp = await reader.receive(1)
+        inp = await stream.receive(1)
         if inp:
             await stream.echo(inp)
             await stream.send('\r\nThey say the only way to win '

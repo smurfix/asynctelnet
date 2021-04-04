@@ -29,9 +29,9 @@ async def test_create_server(server):
 @pytest.mark.anyio
 async def test_open_connection(bind_host, server):
     """Exercise asynctelnet.open_connection with default options."""
-    evt = anyio.create_event()
+    evt = anyio.Event()
     async def shell(stream):
-        await evt.set()
+        evt.set()
         assert repr(stream) == (
             '<TelnetStream server mode:kludge +lineflow -xon_any +slc_sim '
             'server-will:BINARY,ECHO,SGA '
@@ -73,9 +73,9 @@ async def test_telnet_server_open_close(bind_host, server):
     """Test asynctelnet.TelnetServer() instantiation and connection_made()."""
     from asynctelnet.telopt import IAC, WONT, TTYPE
     # given,
-    evt = anyio.create_event()
+    evt = anyio.Event()
     async def shell(s):
-        await evt.set()
+        evt.set()
         await s.send("Goodbye!")
     async with server(shell=shell) as port:
         async with await anyio.connect_tcp(bind_host, port) as s:

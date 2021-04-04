@@ -25,6 +25,7 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar)
+
 from .accessories import CtxObj, spawn, ValueEvent, AttrDict
 
 # list of IAC commands needing 3+ bytes
@@ -66,7 +67,7 @@ class ReadCallback:
     prev = None
 
     def __init__(self):
-        self.evt = anyio.create_event()
+        self.evt = anyio.Event()
 
     async def wait(self):
         await self.evt.wait()
@@ -75,11 +76,11 @@ class ReadCallback:
         if self.prev is not None:
             await self.prev._run()
         return await self.run()
-    
+
     async def _set(self):
         if self.prev is not None:
-            await self.prev._set()
-        await self.evt.set()
+            self.prev._set()
+        self.evt.set()
 
     async def __call__(self):
         try:
@@ -192,13 +193,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._iac_callback = {}
 
         # write lock
-        self._write_lock = anyio.create_lock()
+        self._write_lock = anyio.Lock()
 
         # handler registry
         self._handler = {}
 
         # Locks for preventing concurrent subnegotiations
-        self._subneg_lock = defaultdict(anyio.create_lock)
+        self._subneg_lock = defaultdict(anyio.Lock)
 
         self._charset = encoding
         self._charset_errors = encoding_errors
@@ -313,7 +314,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if value is not None:
             if val is value and (force is None or (force is False and val)):
                 return value
-            evt = anyio.create_event()
+            evt = anyio.Event()
             self._local_option[option] = evt
             await self.send_iac(WILL if value else WONT, option)
             await evt.wait()
@@ -349,7 +350,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             if val is value and (force is None or (force is False and val)):
                 return value
 
-            evt = anyio.create_event()
+            evt = anyio.Event()
             self._remote_option[option] = evt
             await self.send_iac(DO if value else DONT, option)
             await evt.wait()
@@ -385,7 +386,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         async with anyio.create_task_group() as tg:
             self._tg = tg
             self._write_queue, self._read_queue = anyio.create_memory_object_stream(100)
-            self._read_task = await spawn(tg,self._receive_loop)
+            tg.spawn(self._receive_loop)
 
             try:
                 self.log.debug("Start setup")
@@ -399,7 +400,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     await self.teardown()
                     died = False
                 self.log.debug("%s teardown", "Interrupted" if died else "Finished")
-                self._read_task.cancel()
                 tg.cancel_scope.cancel()
 
     async def setup(self):
@@ -408,8 +408,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         if self.force_binary:
             async with anyio.create_task_group() as tg:
-                await tg.spawn(self.local_option,BINARY,True)
-                await tg.spawn(self.remote_option,BINARY,True)
+                tg.spawn(self.local_option,BINARY,True)
+                tg.spawn(self.remote_option,BINARY,True)
+        if self._charset:
+            await self.request_charset(self._charset)
 
     async def teardown(self):
         """
@@ -870,14 +872,14 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             raise
 
         if isinstance(nval, bool):
-            opts[opt] = val = nval
+            opts[opt] = nval
         elif inspect.iscoroutine(nval):
-            opts[opt] = val
+            opts[opt] = True
 
         if isinstance(evt, anyio.abc.Event):
             # we have an open request, so this is a reply, so no answer sent
-            await evt.set()
-        elif evt is not val:
+            evt.set()
+        elif evt is not val or evt is not nval:
             # State change. Reply with the new state.
             await self.send_iac(reply[val], opt)
 
@@ -1061,10 +1063,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             raise RuntimeError("There's already a listener on %r"%(opt,))
 
         res = None
-        evt = anyio.create_event()
+        evt = anyio.Event()
         async def reader(buf):
             nonlocal res
-            await evt.set()
+            evt.set()
             res = buf
 
         try:
@@ -1280,8 +1282,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             await self.queue_recv_message(SetCharset(charset))
             self._charset = charset
         if self._charset_lock is not None:
-            lock,self._charset_lock = self._charset_lock,None
-            await lock.set()
+            self._charset_lock.set()
+            self._charset_lock = None
         return rv
 
     async def handle_will_charset(self):
@@ -1305,7 +1307,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         else:
             charsets = self.get_supported_charsets() or ("UTF-8","LATIN9","LATIN1","US-ASCII")
 
-        self._charset_lock = anyio.create_event()
+        self._charset_lock = anyio.Event()
         # executed by the dispatcher after sending WILL
         return self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
 
@@ -1338,7 +1340,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if opt == REQUEST:
             if self._charset_lock is not None and self.server:
                 # NACK this: simultaneous requests sent by both sides
-                await self.send_sb(CHARSET,REJECTED)
+                await self.send_subneg(CHARSET,REJECTED)
                 return
 
             if buf.startswith(b'TTABLE '):

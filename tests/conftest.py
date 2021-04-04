@@ -2,7 +2,7 @@ import pytest
 import socket
 import anyio
 
-from tests.accessories import testshell, TestServer
+from tests.accessories import testshell, Server
 from contextlib import asynccontextmanager, closing
 from asynctelnet.accessories import AttrDict
 from asynctelnet.server import server_loop
@@ -27,7 +27,7 @@ def _unused_tcp_port():
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
     @asynccontextmanager
-    async def mgr(factory=TestServer, shell=testshell, with_client=True, with_reader=True, **kw):
+    async def mgr(factory=Server, shell=testshell, with_client=True, with_reader=True, **kw):
         res = AttrDict()
         res.evt = anyio.Event()
         res.host = bind_host
@@ -55,13 +55,13 @@ def server(bind_host, unused_tcp_port):
 
         async with anyio.create_task_group() as tg:
             evt=anyio.Event()
-            await tg.spawn(partial(server_loop, protocol_factory=factory, shell=myshell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            tg.spawn(partial(server_loop, protocol_factory=factory, shell=myshell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
             res.tcp_port = unused_tcp_port
             res.client = gen_client
             res.tg = tg
             await evt.wait()
             yield res
-            await tg.cancel_scope.cancel()
+            tg.cancel_scope.cancel()
     return mgr
 
 
@@ -69,3 +69,9 @@ def server(bind_host, unused_tcp_port):
 def unused_tcp_port():
     return _unused_tcp_port()
 
+@pytest.fixture(params=[
+    pytest.param(('asyncio', {}), id='asyncio'),
+    pytest.param(('trio', {}), id='trio'),
+])
+def anyio_backend(request):
+    return request.param

@@ -40,7 +40,7 @@ class TelnetClient(BaseClient):
                  tspeed=(38400, 38400), xdisploc='',
                  *args, **kwargs):
         super().__init__(conn, *args, **kwargs)
-        self.extra.charset= kwargs['encoding'] or ''
+        self.extra.charset= kwargs.get('encoding' '')
             # for our purposes, we only send the second part (encoding) of our
             # 'lang' variable, CHARSET negotiation does not provide locale
             # negotiation; this is better left to the real LANG variable
@@ -64,16 +64,16 @@ class TelnetClient(BaseClient):
         # No terminal? don't try.
         if await self.local_option(TTYPE, bool(self.extra.term)):
             async with anyio.create_task_group() as tg:
-                await tg.spawn(self.remote_option, SGA, True)
-                await tg.spawn(self.remote_option, ECHO, True)
-                await tg.spawn(self.remote_option, BINARY, True)
-                await tg.spawn(self.local_option, NEW_ENVIRON, True)
-                await tg.spawn(self.local_option, NAWS, True)
-                await tg.spawn(self.local_option, BINARY, True)
+                tg.spawn(self.remote_option, SGA, True)
+                tg.spawn(self.remote_option, ECHO, True)
+                tg.spawn(self.remote_option, BINARY, True)
+                tg.spawn(self.local_option, NEW_ENVIRON, True)
+                tg.spawn(self.local_option, NAWS, True)
+                tg.spawn(self.local_option, BINARY, True)
                 if self.extra.charset:
-                    await tg.spawn(self.local_option, CHARSET, True)
+                    tg.spawn(self.local_option, CHARSET, True)
                 else:
-                    await tg.spawn(self.remote_option, CHARSET, True)
+                    tg.spawn(self.remote_option, CHARSET, True)
         # 
 
         # Wire extended rfc callbacks for requests of

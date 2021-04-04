@@ -3,9 +3,8 @@
 import anyio
 
 # local imports
-import asynctelnet
 from asynctelnet.telopt import IS, WILL, TTYPE
-from tests.accessories import BaseTestClient
+from tests.accessories import BaseTestClient, Server
 
 # 3rd party
 import pytest
@@ -24,7 +23,7 @@ async def test_telnet_server_on_ttype(server):
     # given
     _waiter = anyio.Event()
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         async def handle_recv_ttype(self, ttype):
             await super().handle_recv_ttype(ttype)
             if self.extra.term_done:
@@ -64,9 +63,9 @@ async def test_telnet_server_on_ttype_beyond_max(server):
                     'EPSILON', 'ZETA', 'ETA', 'THETA',
                     'IOTA', 'KAPPA', 'LAMBDA', 'MU')
 
-    assert len(given_ttypes) > asynctelnet.TelnetServer.TTYPE_LOOPMAX
+    assert len(given_ttypes) > Server.TTYPE_LOOPMAX
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         async def handle_recv_ttype(self, ttype):
             await super().handle_recv_ttype(ttype)
             if ttype == given_ttypes[-1]:
@@ -85,14 +84,14 @@ async def test_telnet_server_on_ttype_beyond_max(server):
             await srv.evt.wait()
 
     # verify,
-    for idx in range(asynctelnet.TelnetServer.TTYPE_LOOPMAX):
+    for idx in range(Server.TTYPE_LOOPMAX):
         key = f'ttype{idx + 1}'
         expected = given_ttypes[idx]
         assert srv.last.extra[key] == expected, (idx, key)
 
     # ttype{max} gets overwritten continiously, so the last given
     # ttype is the last value.
-    key = f'ttype{asynctelnet.TelnetServer.TTYPE_LOOPMAX + 1}'
+    key = f'ttype{Server.TTYPE_LOOPMAX + 1}'
     expected = given_ttypes[-1]
     assert srv.last.extra[key] == expected
     assert srv.last.extra.TERM == expected
@@ -105,7 +104,7 @@ async def test_telnet_server_on_ttype_empty(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', '', 'BETA')
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         async def handle_recv_ttype(self, ttype):
             await super().handle_recv_ttype(ttype)
             if ttype == given_ttypes[-1]:
@@ -136,7 +135,7 @@ async def test_telnet_server_on_ttype_looped(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'ALPHA')
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         count = 1
 
         async def handle_recv_ttype(self, ttype):
@@ -171,7 +170,7 @@ async def test_telnet_server_on_ttype_repeated(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'GAMMA')
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         count = 1
 
         async def handle_recv_ttype(self, ttype):
@@ -207,7 +206,7 @@ async def test_telnet_server_on_ttype_mud(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'MTTS 137')
 
-    class ServerTestTtype(NoTtype, asynctelnet.TelnetServer):
+    class ServerTestTtype(NoTtype, Server):
         count = 1
 
         async def handle_recv_ttype(self, ttype):

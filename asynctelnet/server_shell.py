@@ -1,10 +1,8 @@
-import anyio
-from anyio.streams.text import TextStream
-
-CR, LF, NUL = '\r\n\x00'
 from . import slc
 from . import telopt
 from . import accessories
+
+CR, LF, NUL = '\r\n\x00'
 
 __all__ = ('telnet_server_shell',)
 

@@ -62,23 +62,26 @@ class TelnetServer(BaseServer):
     async def setup(self):
         await super().setup()
 
+        print("A1")
         # No terminal? don't try.
         if await self.remote_option(TTYPE, True):
+            print("A2")
             async with anyio.create_task_group() as tg:
-                await tg.spawn(self.local_option, SGA, True)
-                await tg.spawn(self.local_option, ECHO, True)
-                await tg.spawn(self.local_option, BINARY, True)
-                await tg.spawn(self.remote_option, NEW_ENVIRON, True)
-                await tg.spawn(self.remote_option, NAWS, True)
-                await tg.spawn(self.remote_option, BINARY, True)
+                tg.spawn(self.local_option, SGA, True)
+                tg.spawn(self.local_option, ECHO, True)
+                tg.spawn(self.local_option, BINARY, True)
+                tg.spawn(self.remote_option, NEW_ENVIRON, True)
+                tg.spawn(self.remote_option, NAWS, True)
+                tg.spawn(self.remote_option, BINARY, True)
                 if isinstance(self.extra.charset, str):
                     if self.extra.charset:
                         # We have a charset we want to use. Send WILL.
-                        await tg.spawn(self.local_option, CHARSET, True)
+                        tg.spawn(self.local_option, CHARSET, True)
                     else:
                         # We don't have a charset we want to use. Ask the
                         # remote to send us a list.
-                        await tg.spawn(self.remote_option, CHARSET, True)
+                        tg.spawn(self.remote_option, CHARSET, True)
+        print("A3")
 
         # TODO request environment
 
@@ -119,7 +122,7 @@ class TelnetServer(BaseServer):
         if duration == -1:
             duration = self.extra.timeout
         if duration > 0:
-            async with anyio.move_on_after(duration) as sc:
+            with anyio.move_on_after(duration) as sc:
                 yield sc
         else:
             yield None
@@ -301,7 +304,7 @@ async def server_loop(host=None, port=23, evt=None, protocol_factory=TelnetServe
 
     log.info('Server ready on {0}:{1}'.format(host, port))
     if evt is not None:
-        await evt.set()
+        evt.set()
     await l.serve(serve)
 
 

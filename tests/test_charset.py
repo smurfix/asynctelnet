@@ -9,7 +9,7 @@ from asynctelnet.telopt import CHARSET
 
 # 3rd party
 import pytest
-from tests.accessories import TestServer
+from tests.accessories import Server
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def test_telnet_server_on_charset(server):
     _waiter2 = anyio.Event()
     given_charset = 'KOI8-U'
 
-    class ServerTestCharset(TestServer):
+    class ServerTestCharset(Server):
         async def setup(self):
             await super().setup()
             await self.local_option(CHARSET,True)
@@ -29,19 +29,21 @@ async def test_telnet_server_on_charset(server):
         def on_charset(self, charset):
             super().on_charset(charset)
             assert self.extra_attributes['charset']() == given_charset
+            self.log.error("ONCHAR S")
             _waiter.set()
 
     class ClientTestCharset(asynctelnet.TelnetClient):
         def on_charset(self, charset):
             super().on_charset(charset)
             assert self.extra_attributes['charset']() == given_charset
+            self.log.error("ONCHAR C")
             _waiter2.set()
 
     # term=None stops autonegotiation
     async with server(factory=ServerTestCharset, encoding=given_charset) as srv, \
             srv.client(encoding="", factory=ClientTestCharset):
 
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()
             await _waiter2.wait()
 
@@ -53,7 +55,7 @@ async def test_telnet_client_on_charset(server):
     _waiter2 = anyio.Event()
     given_charset = 'KOI8-U'
 
-    class ServerTestCharset(TestServer):
+    class ServerTestCharset(Server):
         async def setup(self):
             await super().setup()
             await self.remote_option(CHARSET,True)
@@ -73,7 +75,7 @@ async def test_telnet_client_on_charset(server):
     async with server(factory=ServerTestCharset, encoding="") as srv, \
             srv.client(encoding=given_charset, factory=ClientTestCharset):
 
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()
             await _waiter2.wait()
 
@@ -84,7 +86,7 @@ async def test_telnet_client_select_charset(server):
     # given
     _waiter = anyio.Event()
 
-    class ServerTestCharset(TestServer):
+    class ServerTestCharset(Server):
         async def setup(self):
             await super().setup()
             await self.local_option(CHARSET,True)
@@ -100,10 +102,10 @@ async def test_telnet_client_select_charset(server):
             _waiter.set()
             return val
 
-    async with server(factory=ServerTestCharset,encoding="latin1") as srv, \
-            srv.client(factory=ClientTestCharset, encoding='latin1'):
+    async with server(factory=ServerTestCharset,encoding="") as srv, \
+            srv.client(factory=ClientTestCharset, encoding=''):
 
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()
 
 
@@ -134,5 +136,5 @@ async def test_telnet_client_no_charset(server):
                 ):
 
         # charset remains latin1
-        async with anyio.fail_after(2):
+        with anyio.fail_after(2):
             await _waiter.wait()

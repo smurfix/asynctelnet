@@ -16,3 +16,10 @@ async def serve(stream):
 
 	except (anyio.EndOfStream, anyio.ClosedResourceError):
 		return
+
+async def main():
+    listener = await anyio.create_tcp_listener(local_port=5678)
+    await listener.serve(serve)
+
+anyio.run(main)
+

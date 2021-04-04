@@ -118,12 +118,12 @@ class CtxObj:
     async def __aexit__(self, *tb):
         ctx,self.__ctx = self.__ctx,None
         if hasattr(self,"aclose"):
-            async with anyio.move_on_after(2, shield=True):
+            with anyio.move_on_after(2, shield=True):
                 await self.aclose()
         return await ctx.__aexit__(*tb)
 
 
-async def spawn(tg, proc,*args, _name=None, **kwargs):
+async def spawn(tg, proc, *args, _name=None, **kwargs):
     """
     Helper to start a subtask. Like `anyio.abc.TaskGroup.spawn` but
     (a) accepts keyword arguments, (b) returns an `anyio.abc.CancelScope`
@@ -132,12 +132,12 @@ async def spawn(tg, proc,*args, _name=None, **kwargs):
     sc = None
     async def _spawn(evt, p,a,k):
         nonlocal sc
-        async with anyio.open_cancel_scope() as sc:
-            await evt.set()
+        with anyio.CancelScope() as sc:
+            evt.set()
             await p(*a,**k)
 
-    evt = anyio.create_event()
-    await tg.spawn(_spawn, evt, proc,args,kwargs, name=_name)
+    evt = anyio.Event()
+    tg.spawn(_spawn, evt, proc,args,kwargs, name=_name)
     await evt.wait()
     return sc
 
@@ -155,21 +155,21 @@ class ValueEvent:
     value = None
 
     def __init__(self):
-        self.event = anyio.create_event()
+        self.event = anyio.Event()
 
     async def set(self, value):
         """Set the result to return this value, and wake any waiting task.
         """
         assert not self.event.is_set(), self
         self.value = outcome.Value(value)
-        await self.event.set()
+        self.event.set()
 
     async def set_error(self, exc):
         """Set the result to raise this exceptio, and wake any waiting task.
         """
         assert not self.event.is_set(), self
         self.value = outcome.Error(exc)
-        await self.event.set()
+        self.event.set()
 
     def is_set(self):
         """Check whether the event has occurred.

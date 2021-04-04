@@ -225,12 +225,12 @@ async def telnet_client_shell(telnet_stream):
                     out = await telnet_stream.receive()
                 except anyio.EndOfStream:
                     await term.send(f"\033[m{linesep}Connection closed by foreign host.{linesep}".encode())
-                    await tg.cancel_scope.cancel()
+                    tg.cancel_scope.cancel()
                     return
                 except anyio.ClosedResourceError: 
                     return
                 else:
                     await term.send(out)
 
-        await tg.spawn(read_stdin)
-        await tg.spawn(read_telnet)
+        tg.spawn(read_stdin)
+        tg.spawn(read_telnet)

@@ -1,2 +1,4 @@
 pytest-xdist
 pytest-cov
+pexpect
+trio
