@@ -5,7 +5,7 @@ import anyio
 # local imports
 import asynctelnet
 from asynctelnet.telopt import IS, WILL, TTYPE
-from tests.accessories import unused_tcp_port, bind_host, server, reader
+from tests.accessories import BaseTestClient
 
 # 3rd party
 import pytest
@@ -15,11 +15,11 @@ class NoTtype:
         await super().setup()
         self.extra.term = "whatever"
 
-class ClientTestTtype(NoTtype, asynctelnet.BaseClient):
+class ClientTestTtype(NoTtype, BaseTestClient):
     pass
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype(bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype(server):
     """Test Server's callback method handle_recv_ttype()."""
     # given
     _waiter = anyio.Event()
@@ -31,9 +31,7 @@ async def test_telnet_server_on_ttype(bind_host, unused_tcp_port, server):
                 _waiter.set()
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise
         await client.send_iac(WILL, TTYPE)
@@ -51,8 +49,7 @@ async def test_telnet_server_on_ttype(bind_host, unused_tcp_port, server):
 
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype_beyond_max(
-        bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype_beyond_max(server):
     """
     Test Server's callback method handle_recv_ttype() with long list.
 
@@ -76,9 +73,7 @@ async def test_telnet_server_on_ttype_beyond_max(
                 _waiter.set()
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE)
@@ -104,8 +99,7 @@ async def test_telnet_server_on_ttype_beyond_max(
 
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype_empty(
-        bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype_empty(server):
     """Test Server's callback method handle_recv_ttype(): empty value is ignored. """
     # given
     _waiter = anyio.Event()
@@ -118,9 +112,7 @@ async def test_telnet_server_on_ttype_empty(
                 _waiter.set()
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE)
@@ -138,8 +130,7 @@ async def test_telnet_server_on_ttype_empty(
 
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype_looped(
-        bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype_looped(server):
     """Test Server's callback method handle_recv_ttype() when value looped. """
     # given
     _waiter = anyio.Event()
@@ -155,9 +146,7 @@ async def test_telnet_server_on_ttype_looped(
             self.count += 1
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE)
@@ -176,8 +165,7 @@ async def test_telnet_server_on_ttype_looped(
 
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype_repeated(
-        bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype_repeated(server):
     """Test Server's callback method handle_recv_ttype() when value repeats. """
     # given
     _waiter = anyio.Event()
@@ -193,9 +181,7 @@ async def test_telnet_server_on_ttype_repeated(
             self.count += 1
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE)
@@ -215,8 +201,7 @@ async def test_telnet_server_on_ttype_repeated(
 
 
 @pytest.mark.anyio
-async def test_telnet_server_on_ttype_mud(
-        bind_host, unused_tcp_port, server):
+async def test_telnet_server_on_ttype_mud(server):
     """Test Server's callback method handle_recv_ttype() for MUD clients (MTTS). """
     # given
     _waiter = anyio.Event()
@@ -232,9 +217,7 @@ async def test_telnet_server_on_ttype_mud(
             self.count += 1
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            await anyio.connect_tcp(bind_host, unused_tcp_port) as conn, \
-            ClientTestTtype(conn, encoding=None) as client, \
-            reader(client):
+            srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE)

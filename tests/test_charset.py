@@ -6,19 +6,16 @@ import anyio
 import asynctelnet
 
 from asynctelnet.telopt import CHARSET
-from tests.accessories import (
-    unused_tcp_port,
-    bind_host, server, reader, TestServer
-)
 
 # 3rd party
 import pytest
+from tests.accessories import TestServer
 
 import logging
 logger = logging.getLogger(__name__)
 
 @pytest.mark.anyio
-async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
+async def test_telnet_server_on_charset(server):
     """Server selects a charset"""
     _waiter = anyio.Event()
     _waiter2 = anyio.Event()
@@ -41,11 +38,8 @@ async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
             _waiter2.set()
 
     # term=None stops autonegotiation
-    async with server(factory=ServerTestCharset, encoding=given_charset), \
-        asynctelnet.open_connection(encoding="",
-            client_factory=ClientTestCharset,
-                host=bind_host, port=unused_tcp_port, term=None) as client, \
-                reader(client):
+    async with server(factory=ServerTestCharset, encoding=given_charset) as srv, \
+            srv.client(encoding="", factory=ClientTestCharset):
 
         async with anyio.fail_after(2):
             await _waiter.wait()
@@ -53,7 +47,7 @@ async def test_telnet_server_on_charset(server, bind_host, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_telnet_client_on_charset(server, bind_host, unused_tcp_port):
+async def test_telnet_client_on_charset(server):
     """Client selects a charset"""
     _waiter = anyio.Event()
     _waiter2 = anyio.Event()
@@ -76,11 +70,8 @@ async def test_telnet_client_on_charset(server, bind_host, unused_tcp_port):
             _waiter2.set()
 
     # term=None stops autonegotiation
-    async with server(factory=ServerTestCharset, encoding=""), \
-        asynctelnet.open_connection(encoding=given_charset,
-            client_factory=ClientTestCharset,
-                host=bind_host, port=unused_tcp_port, term=None) as client, \
-                reader(client):
+    async with server(factory=ServerTestCharset, encoding="") as srv, \
+            srv.client(encoding=given_charset, factory=ClientTestCharset):
 
         async with anyio.fail_after(2):
             await _waiter.wait()
@@ -88,7 +79,7 @@ async def test_telnet_client_on_charset(server, bind_host, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_telnet_client_select_charset(bind_host, unused_tcp_port, server):
+async def test_telnet_client_select_charset(server):
     """Test Client's callback method select_charset() selection for illegals."""
     # given
     _waiter = anyio.Event()
@@ -109,19 +100,15 @@ async def test_telnet_client_select_charset(bind_host, unused_tcp_port, server):
             _waiter.set()
             return val
 
-    async with server(factory=ServerTestCharset,encoding="latin1"), \
-        asynctelnet.open_connection(
-            client_factory=ClientTestCharset,
-            host=bind_host, port=unused_tcp_port, term=None,
-            encoding='latin1' # connect_minwait=0.05)
-            ) as client, reader(client):
+    async with server(factory=ServerTestCharset,encoding="latin1") as srv, \
+            srv.client(factory=ClientTestCharset, encoding='latin1'):
 
         async with anyio.fail_after(2):
             await _waiter.wait()
 
 
 @pytest.mark.anyio
-async def test_telnet_client_no_charset(bind_host, unused_tcp_port, server):
+async def test_telnet_client_no_charset(server):
     """Test Client's callback method select_charset() does not select."""
     # given
     _waiter = anyio.Event()
@@ -142,12 +129,9 @@ async def test_telnet_client_no_charset(bind_host, unused_tcp_port, server):
             _waiter.set()
             return val
 
-    async with server(factory=ServerTestCharset,encoding=""), \
-        asynctelnet.open_connection(
-        client_factory=ClientTestCharset,
-        host=bind_host, port=unused_tcp_port, term=None,
-        encoding='latin1'# connect_minwait=0.05
-        ) as client, reader(client):
+    async with server(factory=ServerTestCharset,encoding="") as srv, \
+        srv.client(factory=ClientTestCharset, encoding='latin1'# connect_minwait=0.05
+                ):
 
         # charset remains latin1
         async with anyio.fail_after(2):
