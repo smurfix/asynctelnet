@@ -31,6 +31,10 @@ from .accessories import CtxObj, spawn, ValueEvent, AttrDict
 # list of IAC commands needing 3+ bytes
 _iac_multibyte = {DO, DONT, WILL, WONT, SB}
 
+class OptionTimeoutError(TimeoutError):
+    def __init__(self, value):
+        self.value = value
+
 class TS(Enum):
     DATA="data"  # normal data flow
     IAC="iac"  # IAC
@@ -286,27 +290,15 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         s = self._stream.__orig_stream
         self._stream = s
 
-    async def local_option(self, option: int, value:Optional[bool]=None, force: bool = False):
-        """
-        Set our option, i.e. send WILL/WONT to the other side.
+    async def _send_opt(self, option: int, value:Optional[bool], force: bool, opts:dict, yes_opt:int, no_opt:int):
+        # self.log.debug("%s:%s %s %s","LOC" if opts is self._local_options else "REM", option,value,force)
 
-        Return value: a Boolean if DO/DONT is received, or the content of a
-        subnegotiation if that arrives instead.
-
-        :param option byte: the local option to set (or clear).
-            Must be a byte of length 1.
-        :param value bool: whether to set or clear the option.
-            if ``None``, return the current state.
-        :param force bool: whether to send a message even though the state is already known.
-            If ``False``, re-send only if previously ``True``.
-
-        If the value is not ``None``, this method will result in an error
-        if a negotiation is in progress.
-        """
-        # XXX KEEP IN SYNC WITH NEXT METHOD
-        # self.log.debug("LOC:%s %s %s",option,value,force)
-
-        val = self._local_option.get(option, None)
+        val = opts.get(option, None)
+        if type(val) is OptionTimeoutError:
+            if force:
+                val = None
+            else:
+                raise val
         if value is not None and isinstance(val, anyio.abc.Event):
             raise InProgressError(DO,option)
         if (val is value or value is None) and not force:
@@ -314,55 +306,32 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         if value is not None:
             if val is value and (force is None or (force is False and val)):
                 return value
-            evt = anyio.Event()
-            self._local_option[option] = evt
-            await self.send_iac(WILL if value else WONT, option)
-            await evt.wait()
-            while isinstance(val := self._local_option.get(option), anyio.abc.Event):
-                await val.wait()
+            try:
+                evt = anyio.Event()
+                opts[option] = (evt, value)
+                await self.send_iac(yes_opt if value else no_opt, option)
+                await evt.wait()
+                while isinstance(val := opts.get(option), tuple):
+                    await val[0].wait()
+            finally:
+                if isinstance(val := opts.get(option), tuple):
+                    val[0].set()
+                    opts[option] = OptionTimeoutError(val[1])
         return val
+
+    async def local_option(self, option: int, value:Optional[bool]=None, force: bool = False):
+        return await self._send_opt(option,value,force, self._local_option,WILL,WONT)
 
     async def remote_option(self, option: int, value:Optional[bool]=None, force: Optional[bool] = False):
-        """
-        Set their option, i.e. send DO/DONT to the other side.
-
-        Return value: a Boolean if WILL/WONT is received.
-
-        :param option byte: the remote option to set (or clear).
-            Must be a byte of length 1.
-        :param value bool: whether to set or clear the option.
-            if ``None``, return the current state.
-        :param force bool: whether to send a message even though the state is already known.
-            If ``False``, re-send only if previously ``True``.
-
-        If the value is not ``None``, this method will result in an error
-        if a negotiation is in progress.
-        """
-        # XXX KEEP IN SYNC WITH PREVIOUS METHOD
-        # self.log.debug("REM:%s %s %s",option,value,force)
-
-        val = self._remote_option.get(option, None)
-        if value is not None and isinstance(val, anyio.abc.Event):
-            raise InProgressError(DO,option)
-        if (val is value or value is None) and not force:
-            return value
-        if value is not None:
-            if val is value and (force is None or (force is False and val)):
-                return value
-
-            evt = anyio.Event()
-            self._remote_option[option] = evt
-            await self.send_iac(DO if value else DONT, option)
-            await evt.wait()
-            while isinstance(val := self._remote_option[option], anyio.abc.Event):
-                await val.wait()
-        return val
+        return await self._send_opt(option,value,force, self._remote_option,DO,DONT)
 
     def local_status(self, option:int):
         """
         Get out option, i.e. return True if we got DO.
         """
         val = self._local_option.get(option, None)
+        if type(val) is OptionTimeoutError:
+            raise val
         if isinstance(val, anyio.abc.Event):
             raise InProgressError(DO, option)
         return val
@@ -372,6 +341,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         Get their option, i.e. return True if we got WILL.
         """
         val = self._remote_option.get(option, None)
+        if type(val) is OptionTimeoutError:
+            raise val
         if isinstance(val, anyio.abc.Event):
             raise InProgressError(WILL, option)
         return val
@@ -410,8 +381,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             async with anyio.create_task_group() as tg:
                 tg.spawn(self.local_option,BINARY,True)
                 tg.spawn(self.remote_option,BINARY,True)
-        if self._charset:
-            await self.request_charset(self._charset)
 
     async def teardown(self):
         """
@@ -444,32 +413,38 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     async def _receive_loop(self):
         q = self._write_queue
-        while True:
-            buf = bytearray()
-            try:
-                b = await self._stream.receive(4096)
-            except (anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError):
-                # self.log.debug("IN: EOF")
-                await q.aclose()
-                return
-            # self.log.debug("IN: DATA: %r", b)
-            for x in b:
-                res = await self.feed_byte(x)
-                if res is True:
-                    buf.append(x)
-                if self._read_callback is not None:
-                    cb,self._read_callback = self._read_callback,None
-                    # self.log.debug("RCB %r %r",cb,buf)
-                    if buf:
-                        # self.log.debug("IN: Q1: %r", buf)
-                        await q.send(buf)
-                        buf = bytearray()
-                    # self.log.debug("IN: Q3: %r", cb)
-                    await q.send(cb)
-                    await cb.wait()
-            if buf:
-                # self.log.debug("IN: Q2: %r", buf)
-                await q.send(buf)
+        async with q:
+            while True:
+                buf = bytearray()
+                try:
+                    b = await self._stream.receive(4096)
+                except (anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError):
+                    # self.log.debug("IN: EOF")
+                    return
+                # self.log.debug("IN: DATA: %r", b)
+
+                if self._recv_state == TS.DATA and IAC not in b:
+                    # Speed up: no IAC anywhere to be seen
+                    await q.send(b)
+                    continue
+
+                for x in b:
+                    res = await self.feed_byte(x)
+                    if res is True:
+                        buf.append(x)
+                    if self._read_callback is not None:
+                        cb,self._read_callback = self._read_callback,None
+                        # self.log.debug("RCB %r %r",cb,buf)
+                        if buf:
+                            # self.log.debug("IN: Q1: %r", buf)
+                            await q.send(buf)
+                            buf = bytearray()
+                        # self.log.debug("IN: Q3: %r", cb)
+                        await q.send(cb)
+                        await cb.wait()
+                if buf:
+                    # self.log.debug("IN: Q2: %r", buf)
+                    await q.send(buf)
 
     def queue_read_callback(self, callback: ReadCallback):
         """
@@ -736,13 +711,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
             info.append('local:')
             for k,v in self._local_option.items():
-                c = '-+'[v] if isinstance(v,bool) else '?'
+                c = '-+'[v] if isinstance(v,bool) else '!'+'-+'[v.value] if type(v) is OptionTimeoutError else '?'
             info.append(c+str(k).rsplit(".")[-1])
 
         if self._remote_option:
             info.append('remote:')
             for k,v in self._remote_option.items():
-                c = '-+'[v] if isinstance(v,bool) else '?'
+                c = '-+'[v] if isinstance(v,bool) else '!'+'-+'[v.value] if type(v) is OptionTimeoutError else '?'
             info.append(c+str(k).rsplit(".")[-1])
 
         if self.extra:
@@ -839,31 +814,61 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     (self._recv_state,))
 
     async def _recv_opt(self,cmd,opt):
+        """
+        Incoming option.
+        """
         opt = Opt(opt)
-        handler = self._get_handler(cmd,opt)
+
+        # neg: negative message corresponding to "opt"
+        # .... used to select the handler when ack is not possible
+        # opts: dict with the option's state
+        # reply: (reject,accept) command for replies
+        # want: does the remote want a positive or a negative reply?
         if cmd == DO:
             opts = self._local_option
-            val = True
+            want = True
             reply = (WONT,WILL)
+            neg = DONT
         elif cmd == DONT:
             opts = self._local_option
-            val = False
+            want = False
             reply = (WONT,WILL)
+            neg = DONT
         elif cmd == WILL:
             opts = self._remote_option
-            val = True
+            want = True
             reply = (DONT,DO)
+            neg = WONT
         elif cmd == WONT:
             opts = self._remote_option
-            val = False
+            want = False
             reply = (DONT,DO)
+            neg = WONT
         else:
             raise RuntimeError("? received %r" % cmd)
 
-        opts[opt], evt = val, opts.get(opt, None)
-        self.log.debug('recv IAC %s %s old:%s', Cmd(cmd).name, opt.name, evt)
+        prev = opts.get(opt, None)
+        waiting = True
+        evt = None
+        proc = None
+
+        self.log.debug('recv IAC %s %s old:%r', Cmd(cmd).name, opt.name, prev)
+        if type(prev) is OptionTimeoutError:
+            # Let's assume that the timeout is healed by this message.
+            prev = prev.value
+        elif isinstance(prev, tuple):
+            evt, prev = prev
+        else:
+            waiting = False
+
+        if waiting and not prev:
+            self.log.warning("Recv %s %s: we sent NO but got YES", cmd,opt)
+            want = False
+            cmd = neg
+        handler = self._get_handler(cmd,opt)
+
         try:
-            nval = await handler()
+            new = await handler()
         except BaseException:
             opts[opt] = None
             # Error. Reply with rejection.
@@ -871,20 +876,32 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 await self.send_iac(reply[0], opt)
             raise
 
-        if isinstance(nval, bool):
-            opts[opt] = nval
-        elif inspect.iscoroutine(nval):
-            opts[opt] = True
+        if inspect.iscoroutine(new):
+            proc = new
+            # if we got a negative request we cannot reply yes.
+            # however, if the request is positive we assume that a
+            # handler replying with a coroutine wants us to ack.
+            new = want
+        elif new is None:
+            # The handler was silent, so we echo.
+            new = want
+        elif not isinstance(new, bool):
+            raise RuntimeError("%r returned %r?", handler, new)
 
-        if isinstance(evt, anyio.abc.Event):
-            # we have an open request, so this is a reply, so no answer sent
+        opts[opt] = new
+
+        # clean up
+        if evt is not None:
             evt.set()
-        elif evt is not val or evt is not nval:
-            # State change. Reply with the new state.
-            await self.send_iac(reply[val], opt)
 
-        if inspect.iscoroutine(nval):
-            await nval
+        if not waiting:
+            # send a reply if the state changed *or* we don't accept the change
+            if prev is not want or want is not new:
+                await self.send_iac(reply[new], opt)
+        # otherwise this is a reply, which we MUST NOT react on
+
+        if proc is not None:
+            await proc
 
 
     def _get_handler(self, cmd, opt):
