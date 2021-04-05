@@ -9,7 +9,7 @@ from asynctelnet.client import BaseClient
 class Server(TelnetServer):
     pass
 
-async def testshell(client):
+async def shell(client):
     client.log.debug("R start")
     try:
         while True:
@@ -35,4 +35,4 @@ def server(bind_host, unused_tcp_port):
     return mgr
 
 
-__all__ = ('BaseTestClient', 'Server', 'testshell')
+__all__ = ('BaseTestClient', 'Server', 'shell')

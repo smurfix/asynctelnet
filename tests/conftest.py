@@ -2,11 +2,11 @@ import pytest
 import socket
 import anyio
 
-from tests.accessories import testshell, Server
+from tests.accessories import shell as shell_, Server
 from contextlib import asynccontextmanager, closing
 from asynctelnet.accessories import AttrDict
 from asynctelnet.server import server_loop
-from asynctelnet.client import open_connection
+from asynctelnet.client import open_connection, TelnetClient
 from functools import partial
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def _unused_tcp_port():
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):
     @asynccontextmanager
-    async def mgr(factory=Server, shell=testshell, with_client=True, with_reader=True, **kw):
+    async def mgr(factory=Server, shell=shell_, with_client=True, with_reader=True, **kw):
         res = AttrDict()
         res.evt = anyio.Event()
         res.host = bind_host
@@ -39,7 +39,7 @@ def server(bind_host, unused_tcp_port):
             await shell(client)
 
         @asynccontextmanager
-        async def gen_client(*, factory, with_reader=True, **kw):
+        async def gen_client(*, factory=TelnetClient, with_reader=True, **kw):
             if "host" not in kw:
                 kw["host"] = bind_host
             if "port" not in kw:
@@ -50,7 +50,7 @@ def server(bind_host, unused_tcp_port):
                 kw["term"] = None
             async with open_connection(client_factory=factory, **kw) as client:
                 if with_reader:
-                    res.tg.spawn(testshell, client)
+                    res.tg.spawn(shell_, client)
                 yield client
 
         async with anyio.create_task_group() as tg:
