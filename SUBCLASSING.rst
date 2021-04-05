@@ -5,13 +5,56 @@ Client and server subclasses
 AsyncTelnet is extensible. While the base classes support common
 extensions, more can be added via subclassing.
 
-All methods described here are called asynchronously.
+All methods described here are called asynchronously unless explicitly
+marked as sync.
+
+
+Server error handling
+=====================
+
+If you write a nontrivial server, it may be a good idea to wrap the
+server's ``ProtocolFactory`` with an error handler. Otherwise any exception
+that propagates through it will take down your server and all other
+clients.
+
+
+Startup option handling
+=======================
+
+After connecting, both client and server call their ``setup()`` method. By
+default this sends an initial TTERM DO/WILL exchange and then, if positive,
+exchanges a couple of other Telnet options to establish an initial shared
+state.
+
+If you want to modify this behavior, you need to override this method.
+
+``setup`` accepts one argument, ``has_tterm``, which can be ``None`` (the
+default), ``False`` (assume that there is no terminal, roughly equivalent
+to setting ``term=''``), ``True`` (assume that there is a terminal, do
+exchange the other options), or a timeout in seconds.
+
+If the timeout is reached, ``setup()`` will raise a ``TimeoutError``. If
+you want to continue, it is safe to proceed.
+
+If you want a timeout on the whole initial option exchange, wrap ``setup``
+in ``with anyio.fail_after(TIMEOUT)`` (or ``move_on_after``).
+
+This corresponds to the original ``connect_minwait`` and
+``connect_maxwait`` options. I chose to not support these because while
+they do set a timeout, they don't tell AsyncTelnet what to do when they are
+exceeded.
+
 
 Option management
 =================
 
 This section describes how to actively ask the remote side whether it
 supports an option.
+
+Interrupting an option request (e.g. cancellation by timeout) puts the option
+in "timeout" mode. Another request for that option will raise a `TimeoutError`
+unless either ``force`` is set or the remote does answer.
+
 
 local options
 +++++++++++++
