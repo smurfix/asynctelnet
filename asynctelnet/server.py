@@ -62,10 +62,8 @@ class TelnetServer(BaseServer):
     async def setup(self):
         await super().setup()
 
-        print("A1")
         # No terminal? don't try.
         if await self.remote_option(TTYPE, True):
-            print("A2")
             async with anyio.create_task_group() as tg:
                 tg.spawn(self.local_option, SGA, True)
                 tg.spawn(self.local_option, ECHO, True)
@@ -81,7 +79,6 @@ class TelnetServer(BaseServer):
                         # We don't have a charset we want to use. Ask the
                         # remote to send us a list.
                         tg.spawn(self.remote_option, CHARSET, True)
-        print("A3")
 
         # TODO request environment
 
