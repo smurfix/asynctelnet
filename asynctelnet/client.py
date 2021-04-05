@@ -57,12 +57,16 @@ class TelnetClient(BaseClient):
         self.extra.tspeed = '{},{}'.format(*tspeed)
         self.extra.xdisploc = xdisploc
 
-    async def setup(self):
+    async def setup(self, has_tterm=None):
         """Called after setting up."""
         await super().setup()
 
         # No terminal? don't try.
-        if await self.local_option(TTYPE, bool(self.extra.term)):
+        if not isinstance(has_tterm, bool):
+            with anyio.fail_after(has_tterm):
+                has_tterm = await self.local_option(TTYPE, bool(self.extra.term))
+
+        if has_tterm:
             async with anyio.create_task_group() as tg:
                 tg.spawn(self.remote_option, SGA, True)
                 tg.spawn(self.remote_option, ECHO, True)

@@ -59,11 +59,15 @@ class TelnetServer(BaseServer):
         self.extra.rows = rows
         self.extra.timeout = timeout
 
-    async def setup(self):
+    async def setup(self, has_tterm=None):
         await super().setup()
 
         # No terminal? don't try.
-        if await self.remote_option(TTYPE, True):
+        if not isinstance(has_tterm, bool):
+            with anyio.fail_after(has_tterm):
+                has_tterm = await self.remote_option(TTYPE, True)
+
+        if has_tterm:
             async with anyio.create_task_group() as tg:
                 tg.spawn(self.local_option, SGA, True)
                 tg.spawn(self.local_option, ECHO, True)
