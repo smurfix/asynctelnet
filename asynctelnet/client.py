@@ -35,6 +35,7 @@ class TelnetClient(BaseClient):
     #: variable must also contain a locale, this value is used, providing a
     #: full default LANG value of 'C.utf8'
     DEFAULT_LOCALE = 'C'
+    _charset_tried = None
 
     def __init__(self, conn, term='unknown', cols=80, rows=25,
                  tspeed=(38400, 38400), xdisploc='',
@@ -75,7 +76,7 @@ class TelnetClient(BaseClient):
                 tg.spawn(self.local_option, NAWS, True)
                 tg.spawn(self.local_option, BINARY, True)
                 if self.extra.charset:
-                    tg.spawn(self.local_option, CHARSET, True)
+                    await self._request_charset()
                 else:
                     tg.spawn(self.remote_option, CHARSET, True)
         # 
@@ -161,7 +162,7 @@ class TelnetClient(BaseClient):
         :returns: character encoding agreed to be used.
         :rtype: Union[str, None]
         """
-        selected = ''
+        selected = None
         cur = self.extra.charset
         if cur:
             cur = cur.lower()
@@ -169,6 +170,13 @@ class TelnetClient(BaseClient):
                 if offer.lower() == cur:
                     self.log.debug('encoding unchanged: %s', offer)
                     return offer
+
+        if self._charset_tried is not None:
+            self._charset_tried = None
+        elif len(offers) == 1:
+            self.log.debug('Skipping %s: we want %s', offers[0], cur)
+            self._charset_tried = offers[0]
+            return None
 
         for offer in offers:
             try:
@@ -180,7 +188,7 @@ class TelnetClient(BaseClient):
                 self.extra.lang = self.DEFAULT_LOCALE + '.' + codec.name
                 selected = offer
                 break
-        if selected:
+        if selected is not None:
             self.log.debug('encoding negotiated: %s', selected)
         else:
             self.log.warning('No suitable encoding offered by server: %r.', offers)
@@ -194,43 +202,6 @@ class TelnetClient(BaseClient):
         :returns: client window size as (rows, columns).
         """
         return (self.extra.rows, self.extra.cols)
-
-    def encoding(self, outgoing=None, incoming=None):
-        """
-        Return encoding for the given stream direction.
-
-        :param bool outgoing: Whether the return value is suitable for
-            encoding bytes for transmission to server.
-        :param bool incoming: Whether the return value is suitable for
-            decoding bytes received by the client.
-        :raises TypeError: when a direction argument, either ``outgoing``
-            or ``incoming``, was not set ``True``.
-        :returns: ``'US-ASCII'`` for the directions indicated, unless
-            ``BINARY`` :rfc:`856` has been negotiated for the direction
-            indicated or :attr`force_binary` is set ``True``.
-        :rtype: str
-        """
-        if not (outgoing or incoming):
-            raise TypeError("encoding arguments 'outgoing' and 'incoming' "
-                            "are required: toggle at least one.")
-
-        # may we encode in the direction indicated?
-        _outgoing_only = outgoing and not incoming
-        _incoming_only = not outgoing and incoming
-        _bidirectional = outgoing and incoming
-        may_encode = ((_outgoing_only and self.writer.outbinary) or
-                      (_incoming_only and self.writer.inbinary) or
-                      (_bidirectional and
-                       self.writer.outbinary and self.writer.inbinary))
-
-        if self.force_binary or may_encode:
-            # The 'charset' value, initialized using keyword argument
-            # default_encoding, may be re-negotiated later.  Only the CHARSET
-            # negotiation method allows the server to select an encoding, so
-            # this value is reflected here by a single return statement.
-            return self.extra.charset
-        return 'US-ASCII'
-
 
 class TelnetTerminalClient(TelnetClient):
     """Telnet client for sessions with a network virtual terminal (NVT)."""

@@ -8,7 +8,7 @@ import anyio
 
 __all__ = ('encoding_from_lang', 'name_unicode', 'eightbits', 'make_logger',
            'repr_mapping', 'function_lookup', 'CtxObj', 'spawn', 'ValueEvent',
-           'AttrDict')
+           'AttrDict', 'hybridmethod')
 
 
 def get_version():
@@ -221,3 +221,19 @@ class AttrDict(dict):
         except KeyError:
             raise AttributeError(a) from None
 
+class hybridmethod(object):
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, obj, cls):
+        context = obj if obj is not None else cls
+
+        @wraps(self.func)
+        def hybrid(*args, **kw):
+            return self.func(context, *args, **kw)
+
+        # optional, mimic methods some more
+        hybrid.__func__ = hybrid.im_func = self.func
+        hybrid.__self__ = hybrid.im_self = context
+
+        return hybrid

@@ -4,15 +4,10 @@ import anyio
 
 # local imports
 from asynctelnet.telopt import IS, WILL, TTYPE
-from tests.accessories import BaseTestClient, Server
+from tests.accessories import BaseTestClient, Server, NoTtype
 
 # 3rd party
 import pytest
-
-class NoTtype:
-    async def setup(self):
-        await super().setup()
-        self.extra.term = "whatever"
 
 class ClientTestTtype(NoTtype, BaseTestClient):
     pass

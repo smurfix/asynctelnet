@@ -18,6 +18,15 @@ async def shell(client):
     except anyio.EndOfStream:
         pass
 
+class NoTtype:
+    """
+    Mix-in
+    """
+    async def setup(self):
+        await super().setup(has_tterm=False)
+        self.extra.ttype = "whatever"
+
+
 class BaseTestClient(BaseClient):
     def __init__(self, conn, term=None, cols=None, rows=None, tspeed=None, xdisploc=None, **kw):
         super().__init__(conn, **kw)

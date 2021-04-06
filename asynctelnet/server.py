@@ -78,7 +78,7 @@ class TelnetServer(BaseServer):
                 if isinstance(self.extra.charset, str):
                     if self.extra.charset:
                         # We have a charset we want to use. Send WILL.
-                        tg.spawn(self.local_option, CHARSET, True)
+                        await self.request_charset()
                     else:
                         # We don't have a charset we want to use. Ask the
                         # remote to send us a list.
