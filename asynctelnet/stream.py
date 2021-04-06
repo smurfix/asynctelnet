@@ -12,7 +12,7 @@ from typing import Optional,Union,Iterator,Tuple,Mapping
 from contextlib import asynccontextmanager
 from functools import partial
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, deque
 
 # local imports
 from . import slc
@@ -25,6 +25,7 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar, Req)
+from .options import StreamOptions
 
 from .accessories import CtxObj, spawn, ValueEvent, AttrDict
 
@@ -167,6 +168,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     # so no duplicate code please.
     extra: AttrDict = None
 
+    # Storage for known options.
+    l_opt: StreamOptions = None
+    r_opt: StreamOptions = None
+
     def __init__(self, stream: anyio.abc.ByteStream, *,
             log=None, force_binary=False, encoding=None,
             encoding_errors="replace", client=False, server=False):
@@ -186,6 +191,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self.force_binary = force_binary
 
         self.extra = AttrDict()
+        self.l_opt = StreamOptions(self, True)
+        self.r_opt = StreamOptions(self, False)
 
         if client == server:
             raise TypeError("You must set either `client` or `server`.")
@@ -228,8 +235,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             def fn(k):
                 return lambda: self.extra[k] 
             res[k] = fn(k)
-        return res
-
         return res
 
     # Public methods for notifying about, or soliciting state options.
@@ -593,46 +598,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     async def writeline(self, line: str):
         await self._writeline(self._encoder(line))
 
-    async def handle_do_binary(self):
-        return True
-
-    async def handle_dont_binary(self):
-        return self.force_binary
-
-    async def handle_will_binary(self):
-        return True
-
-    async def handle_wont_binary(self):
-        if seld._did_binary:
-            return False
-        self._did_binary = True
-        return self.force_binary
-
-# public derivable methods DO, DONT, WILL, and WONT negotiation
-#
-    async def handle_do(self, opt):
-        """
-        Process byte 3 of series (IAC, DO, opt) received by remote end.
-        """
-        return False
-
-    async def handle_dont(self, opt):
-        """
-        Process byte 3 of series (IAC, DONT, opt) received by remote end.
-        """
-        return False
-
-    async def handle_will(self, opt):
-        """
-        Process byte 3 of series (IAC, WILL, opt) received by remote end.
-        """
-        return False
-
-    async def handle_wont(self, opt):
-        """
-        Process byte 3 of series (IAC, WONT, opt) received by remote end.
-        """
-        return False
 
 # public derivable Sub-Negotation parsing
 #
@@ -820,7 +785,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Incoming option.
         """
-        opt = Opt(opt)
+        opt = self.opt[opt]
 
         # neg: negative message corresponding to "opt"
         # .... used to select the handler when ack is not possible
@@ -832,21 +797,25 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             want = True
             reply = (WONT,WILL)
             neg = DONT
+            handler = opt.handle_do
         elif cmd == DONT:
             opts = self._local_option
             want = False
             reply = (WONT,WILL)
             neg = DONT
+            handler = opt.handle_dont
         elif cmd == WILL:
             opts = self._remote_option
             want = True
             reply = (DONT,DO)
             neg = WONT
+            handler = opt.handle_will
         elif cmd == WONT:
             opts = self._remote_option
             want = False
             reply = (DONT,DO)
             neg = WONT
+            handler = opt.handle_wont
         else:
             raise RuntimeError("? received %r" % cmd)
 
@@ -905,22 +874,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         if proc is not None:
             await proc
-
-
-    def _get_handler(self, cmd, opt):
-        cmdn = cmd.name.lower()
-        optn = opt.name.lower()
-
-        hdl = self._handler.get((cmd,opt),None)
-        if hdl is not None:
-            return hdl
-        hdl = getattr(self, 'handle_%s_%s'%(cmdn,optn), None)
-        if hdl is not None:
-            return hdl
-        hdl = getattr(self, 'handle_'+optn, None)
-        if hdl is not None:
-            return partial(hdl,cmd)
-        return partial(getattr(self,'handle_'+cmdn),opt)
 
 
     # Our protocol methods
@@ -1635,13 +1588,24 @@ class TelnetStream(BaseTelnetStream):
         await self.send_subnet(TSPEED, SEND)
         return True
 
+    async def request_new_environ(self):
+        """
+        Ask the remote side for the envvars returned by `get_request_envvars` and `get_request_uservars`.
+
+        Returns True if request is valid for telnet state, and was sent.
+        """
+
+    request_environ = request_new_environ
+
     async def handle_will_new_environ(self):
         """
         Request sub-negotiation NEW_ENVIRON, :rfc:`1572`.
 
         Returns True if request is valid for telnet state, and was sent.
         """
-        assert self.server, 'SB NEW_ENVIRON SEND may only be sent by server'
+        if not self.server:
+            self.log.error('NEW_ENVIRON DO may only be sent by server')
+            return False
 
         if not self._remote_option.enabled(NEW_ENVIRON):
             self.log.debug('cannot send SB NEW_ENVIRON SEND IS '

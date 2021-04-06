@@ -7,6 +7,20 @@
     :target: https://pypi.python.org/pypi/asynctelnet
 
 
+Current status
+==============
+
+See `issue 4 <https://github.com/smurfix/asynctelnet/issues/4>_`.
+
+Short version: the current code has a lot of problems and bugs; it
+inherited many of the former from telnetlib3, the latter are mainly a
+result of incomplete conversion to async-land.
+
+It will be modularized and rewritten. The API will change.
+
+Its current state is "be prepared to code some bug workarounds if you want to use it".
+
+
 Introduction
 ============
 
