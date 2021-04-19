@@ -17,7 +17,7 @@ from functools import partial
 from .accessories import repr_mapping, make_logger, _DEFAULT_LOGFMT, function_lookup
 from .client_base import BaseClient
 from .stream import SetCharset
-from .telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
+from .options import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
 
 __all__ = ('TelnetClient', 'TelnetTerminalClient', 'open_connection')
 
@@ -58,6 +58,14 @@ class TelnetClient(BaseClient):
         self.extra.tspeed = '{},{}'.format(*tspeed)
         self.extra.xdisploc = xdisploc
 
+        self.opt.add(TTYPE)
+        self.opt.add(SGA)
+        self.opt.add(ECHO)
+        self.opt.add(BINARY)
+        self.opt.add(NEW_ENVIRON)
+        self.opt.add(NAWS)
+        self.opt.add(CHARSET)
+
     async def setup(self, has_tterm=None):
         """Called after setting up."""
         await super().setup()
@@ -81,16 +89,16 @@ class TelnetClient(BaseClient):
                     tg.spawn(self.remote_option, CHARSET, True)
         # 
 
-        # Wire extended rfc callbacks for requests of
-        # terminal attributes, environment values, etc.
-        for (opt, func) in (
-                (TTYPE, self.send_ttype),
-                (TSPEED, self.send_tspeed),
-                (XDISPLOC, self.send_xdisploc),
-                (NEW_ENVIRON, self.send_env),
-                (NAWS, self.send_naws),
-                ):
-            self.set_ext_send_callback(opt, func)
+#       # Wire extended rfc callbacks for requests of
+#       # terminal attributes, environment values, etc.
+#       for (opt, func) in (
+#               (TTYPE, self.send_ttype),
+#               (TSPEED, self.send_tspeed),
+#               (XDISPLOC, self.send_xdisploc),
+#               (NEW_ENVIRON, self.send_env),
+#               (NAWS, self.send_naws),
+#               ):
+#           self.set_ext_send_callback(opt, func)
 
     async def handle_do_new_environ(self):
         return True
@@ -173,7 +181,7 @@ class TelnetClient(BaseClient):
 
         if self._charset_tried is not None:
             self._charset_tried = None
-        elif len(offers) == 1:
+        elif len(offers) == 1 and cur:
             self.log.debug('Skipping %s: we want %s', offers[0], cur)
             self._charset_tried = offers[0]
             return None

@@ -126,7 +126,7 @@ async def test_telnet_client_no_charset(server):
     class ClientTestCharset(asynctelnet.TelnetClient):
         def select_charset(self, offered):
             val = super().select_charset(offered)
-            assert val == ''
+            assert val is None
             assert self.extra_attributes['charset']() == 'latin1'
             _waiter.set()
             return val

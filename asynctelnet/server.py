@@ -23,7 +23,8 @@ from functools import partial
 from .server_base import BaseServer
 from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
 from .stream import SetCharset
-from .telopt import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY, SEND
+from .options import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY
+from .telopt import SEND
 
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
@@ -58,6 +59,14 @@ class TelnetServer(BaseServer):
         self.extra.cols = cols
         self.extra.rows = rows
         self.extra.timeout = timeout
+
+        self.opt.add(TTYPE)
+        self.opt.add(SGA)
+        self.opt.add(ECHO)
+        self.opt.add(BINARY)
+        self.opt.add(NEW_ENVIRON)
+        self.opt.add(NAWS)
+        self.opt.add(CHARSET)
 
     async def setup(self, has_tterm=None):
         await super().setup()

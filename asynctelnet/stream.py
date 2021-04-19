@@ -12,7 +12,7 @@ from typing import Optional,Union,Iterator,Tuple,Mapping
 from contextlib import asynccontextmanager
 from functools import partial
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, deque
 
 # local imports
 from . import slc
@@ -25,6 +25,7 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar, Req)
+from .options import StreamOptions, Forced
 
 from .accessories import CtxObj, spawn, ValueEvent, AttrDict
 
@@ -167,6 +168,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     # so no duplicate code please.
     extra: AttrDict = None
 
+    # Storage for options.
+    opt: StreamOptions = None
+
     def __init__(self, stream: anyio.abc.ByteStream, *,
             log=None, force_binary=False, encoding=None,
             encoding_errors="replace", client=False, server=False):
@@ -186,6 +190,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self.force_binary = force_binary
 
         self.extra = AttrDict()
+        self.opt = StreamOptions(self)
 
         if client == server:
             raise TypeError("You must set either `client` or `server`.")
@@ -230,8 +235,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             res[k] = fn(k)
         return res
 
-        return res
-
     # Public methods for notifying about, or soliciting state options.
     #
     @property
@@ -256,12 +259,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         #: Dictionary of telnet option byte(s) that follow an
         #: IAC-WILL or IAC-WONT command, sent by our end,
         #: indicating state of local capabilities.
-        self._local_option = {}
-
-        #: Dictionary of telnet option byte(s) that follow an
-        #: IAC-WILL or IAC-WONT command received by remote end,
-        #: indicating state of remote capabilities.
-        self._remote_option = {}
+        for opt in self.opt.values():
+            opt.reset()
 
         #: Sub-negotiation buffer
         self._recv_sb_buffer = bytearray()
@@ -291,62 +290,25 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         s = self._stream.__orig_stream
         self._stream = s
 
-    async def _send_opt(self, option: int, value:Optional[bool], force: bool, opts:dict, yes_opt:int, no_opt:int):
-        # self.log.debug("%s:%s %s %s","LOC" if opts is self._local_options else "REM", option,value,force)
 
-        val = opts.get(option, None)
-        if type(val) is OptionTimeoutError:
-            if force:
-                val = None
-            else:
-                raise val
-        if value is not None and isinstance(val, anyio.abc.Event):
-            raise InProgressError(DO,option)
-        if (val is value or value is None) and not force:
-            return value
-        if value is not None:
-            if val is value and (force is None or (force is False and val)):
-                return value
-            try:
-                evt = anyio.Event()
-                opts[option] = (evt, value)
-                await self.send_iac(yes_opt if value else no_opt, option)
-                await evt.wait()
-                while isinstance(val := opts.get(option), tuple):
-                    await val[0].wait()
-            finally:
-                if isinstance(val := opts.get(option), tuple):
-                    val[0].set()
-                    opts[option] = OptionTimeoutError(val[1])
-        return val
+    async def local_option(self, option: int, value:Optional[bool]=None, force: Forced = Forced.no) -> bool:
+        return await self.opt[option].set_local(value,force)
 
-    async def local_option(self, option: int, value:Optional[bool]=None, force: bool = False):
-        return await self._send_opt(option,value,force, self._local_option,WILL,WONT)
+    async def remote_option(self, option: int, value:Optional[bool]=None, force: Forced = Forced.no) -> bool:
+        return await self.opt[option].set_remote(value,force)
 
-    async def remote_option(self, option: int, value:Optional[bool]=None, force: Optional[bool] = False):
-        return await self._send_opt(option,value,force, self._remote_option,DO,DONT)
 
-    def local_status(self, option:int):
+    def local_status(self, option:int) -> bool:
         """
-        Get out option, i.e. return True if we got DO.
+        Get our option, i.e. return True if we got DO.
         """
-        val = self._local_option.get(option, None)
-        if type(val) is OptionTimeoutError:
-            raise val
-        if isinstance(val, anyio.abc.Event):
-            raise InProgressError(DO, option)
-        return val
+        return self.opt[option].has_will
 
-    def remote_status(self, option:int):
+    def remote_status(self, option:int) -> bool:
         """
         Get their option, i.e. return True if we got WILL.
         """
-        val = self._remote_option.get(option, None)
-        if type(val) is OptionTimeoutError:
-            raise val
-        if isinstance(val, anyio.abc.Event):
-            raise InProgressError(WILL, option)
-        return val
+        return self.opt[option].has_do
 
 
     @asynccontextmanager
@@ -367,7 +329,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 yield self
             finally:
                 del self.extra
-                del self.options
+                del self.opt
                 self.log.debug("Start teardown")
                 died = True
                 with anyio.move_on_after(2):
@@ -376,14 +338,19 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 self.log.debug("%s teardown", "Interrupted" if died else "Finished")
                 tg.cancel_scope.cancel()
 
+    def start_soon(self, p,*a,**k):
+        async def _work(p,a,k):
+            await p(*a,**k)
+        self._tg.start_soon(p,a,k)
+
     async def setup(self):
         """
         Called when starting this connection.
         """
         if self.force_binary:
             async with anyio.create_task_group() as tg:
-                tg.spawn(self.local_option,BINARY,True)
-                tg.spawn(self.remote_option,BINARY,True)
+                tg.spawn(self.opt.BINARY.send_will)
+                tg.spawn(self.opt.BINARY.send_do)
 
     async def teardown(self):
         """
@@ -593,65 +560,16 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     async def writeline(self, line: str):
         await self._writeline(self._encoder(line))
 
-    async def handle_do_binary(self):
-        return True
-
-    async def handle_dont_binary(self):
-        return self.force_binary
-
-    async def handle_will_binary(self):
-        return True
-
-    async def handle_wont_binary(self):
-        if seld._did_binary:
-            return False
-        self._did_binary = True
-        return self.force_binary
-
-# public derivable methods DO, DONT, WILL, and WONT negotiation
-#
-    async def handle_do(self, opt):
-        """
-        Process byte 3 of series (IAC, DO, opt) received by remote end.
-        """
-        return False
-
-    async def handle_dont(self, opt):
-        """
-        Process byte 3 of series (IAC, DONT, opt) received by remote end.
-        """
-        return False
-
-    async def handle_will(self, opt):
-        """
-        Process byte 3 of series (IAC, WILL, opt) received by remote end.
-        """
-        return False
-
-    async def handle_wont(self, opt):
-        """
-        Process byte 3 of series (IAC, WONT, opt) received by remote end.
-        """
-        return False
 
 # public derivable Sub-Negotation parsing
 #
-    async def handle_subneg(self, opt, buf):
+    async def _recv_subneg(self, opt, buf):
         """
         Callback for end of sub-negotiation buffer.
 
         :param bytes buffer: Message buffer. Byte 0 is the command.
         """
-        opt = Opt(opt)
-        hdl = self._subneg_recv.get(opt, None)
-        if hdl is None:
-            hdl = getattr(self,'handle_subneg_'+opt.name.lower(), None)
-        if hdl is not None:
-            await hdl(buf)
-            return
-        self.log.error('SB unhandled: opt=%d, buf=%r', opt.name, buf)
-
-    handle_subnegotiation = handle_subneg
+        await self.opt[opt].handle_sb(buf)
 
 
     async def send(self, buf, *, escape_iac=True, locked = False):
@@ -690,8 +608,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             async with self._write_lock:
                 await self._stream.send(buf)
 
-    # Our Private API methods
-
     @staticmethod
     def _escape_iac(buf):
         r"""Replace bytes in buf ``IAC`` (``b'\xff'``) by ``IAC IAC``."""
@@ -710,18 +626,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     def _repr(self):
         info = []
-        if self._local_option:
+        if self.opt:
 
-            info.append('local:')
-            for k,v in self._local_option.items():
-                c = '-+'[v] if isinstance(v,bool) else '!'+'-+'[v.value] if type(v) is OptionTimeoutError else '?'
-            info.append(c+str(k).rsplit(".")[-1])
-
-        if self._remote_option:
-            info.append('remote:')
-            for k,v in self._remote_option.items():
-                c = '-+'[v] if isinstance(v,bool) else '!'+'-+'[v.value] if type(v) is OptionTimeoutError else '?'
-            info.append(c+str(k).rsplit(".")[-1])
+            info.append('opt:')
+            for v in self.opt.values():
+                info.append(repr(v))
 
         if self.extra:
             info.append('extra:')
@@ -732,7 +641,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     def __repr__(self):
         """Description of stream encoding state."""
-        return '<%s: %s>' % (self.__class__.__name__, ' '.join(self._repr()))
+        try:
+            return '<%s: %s>' % (self.__class__.__name__, ' '.join(self._repr()))
+        except Exception as exc:
+            return '<%s: %r>' % (self.__class__.__name__, exc)
 
     async def feed_byte(self, byte) -> bool:
         """
@@ -797,7 +709,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             elif byte == SE:
                 self._recv_state = TS.DATA
                 try:
-                    await self.handle_subneg(self._recv_cmd, self._recv_sb_buffer)
+                    await self._recv_subneg(self._recv_cmd, self._recv_sb_buffer)
                 finally:
                     self._recv_sb_buffer.clear()
             else:
@@ -807,7 +719,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                         self._recv_cmd.name, len(self._recv_sb_buffer), name_command(byte))
                 self._recv_state = TS.IAC
                 try:
-                    await self.handle_subneg(self._recv_cmd, self._recv_sb_buffer)
+                    await self._recv_subneg(self._recv_cmd, self._recv_sb_buffer)
                 finally:
                     self._recv_sb_buffer.clear()
                 await self.flow_byte(byte)
@@ -820,107 +732,24 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Incoming option.
         """
-        opt = Opt(opt)
+        opt = self.opt[opt]
 
         # neg: negative message corresponding to "opt"
         # .... used to select the handler when ack is not possible
         # opts: dict with the option's state
         # reply: (reject,accept) command for replies
         # want: does the remote want a positive or a negative reply?
+        self.log.debug("R: IAC %s %s", cmd.name, opt.value)
         if cmd == DO:
-            opts = self._local_option
-            want = True
-            reply = (WONT,WILL)
-            neg = DONT
+            await opt.loc.process_yes()
         elif cmd == DONT:
-            opts = self._local_option
-            want = False
-            reply = (WONT,WILL)
-            neg = DONT
+            await opt.loc.process_no()
         elif cmd == WILL:
-            opts = self._remote_option
-            want = True
-            reply = (DONT,DO)
-            neg = WONT
+            await opt.rem.process_yes()
         elif cmd == WONT:
-            opts = self._remote_option
-            want = False
-            reply = (DONT,DO)
-            neg = WONT
+            await opt.rem.process_no()
         else:
             raise RuntimeError("? received %r" % cmd)
-
-        prev = opts.get(opt, None)
-        waiting = True
-        evt = None
-        proc = None
-
-        self.log.debug('recv IAC %s %s old:%r', Cmd(cmd).name, opt.name, prev)
-        if type(prev) is OptionTimeoutError:
-            # Let's assume that the timeout is healed by this message.
-            prev = prev.value
-        elif isinstance(prev, tuple):
-            evt, prev = prev
-        else:
-            waiting = False
-
-        if waiting and not prev:
-            self.log.warning("Recv %s %s: we sent NO but got YES", cmd,opt)
-            want = False
-            cmd = neg
-        handler = self._get_handler(cmd,opt)
-
-        try:
-            new = await handler()
-        except BaseException:
-            opts[opt] = None
-            # Error. Reply with rejection.
-            with anyio.move_on_after(0.5, shield=True):
-                await self.send_iac(reply[0], opt)
-            raise
-
-        if inspect.iscoroutine(new):
-            proc = new
-            # if we got a negative request we cannot reply yes.
-            # however, if the request is positive we assume that a
-            # handler replying with a coroutine wants us to ack.
-            new = want
-        elif new is None:
-            # The handler was silent, so we echo.
-            new = want
-        elif not isinstance(new, bool):
-            raise RuntimeError("%r returned %r?", handler, new)
-
-        opts[opt] = new
-
-        # clean up
-        if evt is not None:
-            evt.set()
-
-        if not waiting:
-            # send a reply if the state changed *or* we don't accept the change
-            if prev is not want or want is not new:
-                await self.send_iac(reply[new], opt)
-        # otherwise this is a reply, which we MUST NOT react on
-
-        if proc is not None:
-            await proc
-
-
-    def _get_handler(self, cmd, opt):
-        cmdn = cmd.name.lower()
-        optn = opt.name.lower()
-
-        hdl = self._handler.get((cmd,opt),None)
-        if hdl is not None:
-            return hdl
-        hdl = getattr(self, 'handle_%s_%s'%(cmdn,optn), None)
-        if hdl is not None:
-            return hdl
-        hdl = getattr(self, 'handle_'+optn, None)
-        if hdl is not None:
-            return partial(hdl,cmd)
-        return partial(getattr(self,'handle_'+cmdn),opt)
 
 
     # Our protocol methods
@@ -930,12 +759,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Whether binary data is expected to be received on reader, :rfc:`856`.
         """
-        return self._remote_option.get(BINARY)
+        return self.opt.BINARY.has_do
 
     @property
     def outbinary(self):
         """Whether binary data may be written to the writer, :rfc:`856`."""
-        return self._local_option.get(BINARY)
+        return self.opt.BINARY.has_will
+
 
     async def echo(self, data:Union[bytes,str]):
         """
@@ -967,8 +797,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         From client perspective: the server will not echo our input, we should
         chose to duplicate our input to standard out ourselves.
         """
-        return (self.server and self._local_option.get(ECHO, False)) or \
-               (self.client and self._remote_option.get(ECHO, False))
+        if self.server:
+            return self.opt.ECHO.has_will
+        else:
+            return self.opt.ECHO.has_do
 
     @property
     def mode(self):
@@ -1021,29 +853,26 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         Send a subnegotiation.
         """
         opt = Opt(opt)
+        self.log.debug("S: IAC SB %s %s",opt.name," ".join(str(x) for x in bufs))
         buf = self._escape_iac(b''.join(bytes([b]) if isinstance(b,int) else b
             for b in bufs))
-        self.log.debug("send IAC SB %s %r",opt.name,buf)
         await self.send(bytes([IAC,SB,opt])+buf+bytes([IAC,SE]), escape_iac=False)
 
     async def send_iac(self, *bufs):
         """
         Send a command starting with IAC (byte value 0xFF).
 
-        No transformations of bytes are performed.  Normally, if the
-        byte value 255 is sent, it is escaped as ``IAC + IAC``.  This
-        method ensures it is not escaped.
-
-        Try not to call this to transmit DO/DONT/WILL/WONT/SB/SE.
+        Do not call this to transmit DO/DONT/WILL/WONT/SB/SE unless you're
+        an option handler.
         """
         buf = self._escape_iac(b''.join(bytes([b]) if isinstance(b,int) else b
             for b in bufs))
         if len(bufs) == 1:
-            self.log.debug("send IAC %s",Cmd(bufs[0]).name)
+            self.log.debug("S: IAC %s",Cmd(bufs[0]).name)
         elif len(bufs) == 2:
-            self.log.debug("send IAC %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name)
+            self.log.debug("S: IAC %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name)
         else:
-            self.log.debug("send IAC %s %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name,bufs[2:])
+            self.log.debug("S: IAC %s %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name,bufs[2:])
 
         assert isinstance(buf, (bytes, bytearray)), buf
         assert buf and len(buf), buf
@@ -1307,31 +1136,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         self._charset_retry = False
         return rv
 
-    async def handle_will_charset(self):
-        """
-        The remote side sent a WILL. Ack if we do charsets.
-        """
-        return isinstance(self._charset, str)
-
-    async def handle_do_charset(self):
-        """
-        The remote side accepts our WILL. Start negotiating.
-        """
-        if not isinstance(self._charset, str):
-            return False
-        if self._charset_lock is not None:
-            return True
-
-        charsets = self._charsets_wanted
-        if charsets is None:
-            self._charsets_wanted = charsets = self.get_supported_charsets() or ("UTF-8","LATIN9","LATIN1","US-ASCII")
-        if not charsets:
-            import pdb;pdb.set_trace()
-
-        self._charset_lock = anyio.Event()
-        # executed by the dispatcher after sending WILL
-        return self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
-
     async def wait_for_charset(self):
         if self._charset_lock is not None:
             await self._charset_lock.wait()
@@ -1344,116 +1148,16 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         Return False if no charset negotiation, None if rejected, or the
         name of the charset accepted by the other side.
         """
-        return self._do_request(CHARSET, True, lambda: self._charset)
+        while self._charset_lock:
+            await self._charset_lock.wait()
+        await self.opt.CHARSET.send_sb()
+        await self._charset_lock.wait()
 
     async def _do_request(self, opt, is_local, result):
         if (self.local_status if is_local else self.remote_status)(CHARSET):
             await getattr(self,"_request_"+opt.name.lower())()
         elif not await (self.local_option if is_local else self.remote_option)(CHARSET, True):
             return False
-
-        while self._charset_lock:
-            await self._charset_lock.wait()
-        await self._request_charset()
-        await self._charset_lock.wait()
-        return self._charset
-
-    async def _request_charset(self):
-
-        charsets = self._charsets_wanted
-        if charsets is None:
-            self._charsets_wanted = charsets = self.get_supported_charsets() or ("UTF-8","LATIN9","LATIN1","US-ASCII")
-
-        if self.local_status(CHARSET):
-            if not self._charset_lock:
-                self._charset_lock = anyio.Event()
-            if not charsets:
-                self.log.error("Charset list is empty!")
-                await self._set_charset(None)
-                return
-            await self.send_subneg(CHARSET,REQUEST,b';',';'.join(charsets).encode("ascii"))
-        else:
-            if not await self.local_option(CHARSET, True):
-                return False
-            # if True, we got a DO back, which triggered handle_do_charset
-
-
-    async def handle_subneg_charset(self, buf):
-        opt,buf = buf[0],buf[1:]
-
-        try:
-            opt_kind = Req(opt).name
-        except ValueError:
-            opt_kind = f'?{opt}'
-        self.log.debug('recv %s %s: %r', 'CHARSET', opt_kind, buf.decode("ascii"))
-
-        if opt == REQUEST:
-            if self._charset_lock is not None and self.server:
-                if not self._charset_retry:
-                    # NACK this request: simultaneous requests sent by both sides.
-                    await self.send_subneg(CHARSET,REJECTED)
-                    return
-                # However, we need to guard against the case where the
-                # client also rejects our choice because it doesn't
-                # like it. In that case the incoming reject, below, sets
-                # this flag so we know we may process the client's new
-                # request.
-                self._charset_retry = False
-
-            if buf.startswith(b'TTABLE '):
-                buf = buf[8:]  # ignore TTABLE_V
-            sep,buf = buf[0:1],buf[1:]
-            offers = [charset.decode('ascii') for charset in buf.split(sep)]
-            selected = self.select_charset(offers)
-
-            if selected is None:
-                self.log.debug('send IAC SB CHARSET REJECTED IAC SE')
-                await self.send_subneg(CHARSET, REJECTED)
-                if self.client and self._charset_lock is not None and self.local_status(CHARSET):
-                    # The server has rejected my request due to a
-                    # collision. Thus I need to retry.
-                    self._charset_retry = True
-                else:
-                    await self._set_charset(selected)
-            else:
-                self.log.debug('send IAC SB CHARSET ACCEPTED %r IAC SE',selected)
-                await self.send_subneg(CHARSET, ACCEPTED, selected.encode('ascii'))
-                await self._set_charset(selected)
-
-        elif opt == ACCEPTED:
-            charset = buf.decode('ascii')
-            self.log.debug('recv IAC SB CHARSET ACCEPTED %r IAC SE', charset)
-            if not await self._set_charset(charset):
-                # Duh. The remote side returned something we can't handle.
-                await self._set_charset("UTF-8", False)
-
-        elif opt == REJECTED:
-            self.log.warning('recv IAC SB CHARSET REJECTED IAC SE')
-            if self._charset_retry:
-                if self.server:
-                    # this is normal on the client
-                    self.log.warning("Charset: retry set and we get a REJ??")
-                    self._charset_retry = False
-            elif self._charsets_wanted:
-                self._charsets_wanted = None
-            else:
-                await self._set_charset(None)
-                return
-
-            if self._charset_lock:
-                # Other side rejected us, either because of overlapping
-                # requests or because it didn't like ours: remember that it
-                # did, see above
-                if self.client:
-                    # Server didn't like our first attempt, so try again
-                    await self._request_charset()
-                else:
-                    self._charset_retry = True
-
-        else:
-            self.log.warning("SB CHARSET TTABLE (or other nonsense): %r %r", opt, buf)
-            self._local_option[CHARSET] = False
-            self._remote_option[CHARSET] = False
 
 
     def encoding(self, outgoing=None, incoming=None):
@@ -1635,13 +1339,24 @@ class TelnetStream(BaseTelnetStream):
         await self.send_subnet(TSPEED, SEND)
         return True
 
+    async def request_new_environ(self):
+        """
+        Ask the remote side for the envvars returned by `get_request_envvars` and `get_request_uservars`.
+
+        Returns True if request is valid for telnet state, and was sent.
+        """
+
+    request_environ = request_new_environ
+
     async def handle_will_new_environ(self):
         """
         Request sub-negotiation NEW_ENVIRON, :rfc:`1572`.
 
         Returns True if request is valid for telnet state, and was sent.
         """
-        assert self.server, 'SB NEW_ENVIRON SEND may only be sent by server'
+        if not self.server:
+            self.log.error('NEW_ENVIRON DO may only be sent by server')
+            return False
 
         if not self._remote_option.enabled(NEW_ENVIRON):
             self.log.debug('cannot send SB NEW_ENVIRON SEND IS '
