@@ -1,4 +1,4 @@
-from ._base import BaseOption
+from ._base import BaseOption, Forced
 import anyio
 
 
@@ -13,6 +13,110 @@ class BINARY(BaseOption):
 
     async def remote_will(self):
         return True
+
+
+class TTYPE(BaseOption):
+    """
+    TTYPE negotiation
+    """
+    value = 24
+
+    # server
+
+    async def handle_will(self):
+        s = self.stream
+        if not s.server:
+            return False
+        if not s.extra.get('tterm',None):
+            return False
+        return True
+
+    async def after_handle_will(self):
+        s = self.stream
+        await s.send_subneg(TTYPE, SEND)
+
+    async def handle_recv(self, ttype):
+        """Callback for TTYPE response, :rfc:`930`."""
+        # TTYPE may be requested multiple times, we honor this system and
+        # attempt to cause the client to cycle, as their first response may
+        # not be their most significant. All responses held as 'ttype{n}',
+        # where {n} is their serial response order number.
+        #
+        # The most recently received terminal type by the server is
+        # assumed TERM by this implementation, even when unsolicited.
+        s = self.stream
+        from ..telopt import SEND
+
+        key = f'ttype{s._ttype_count}'
+        s.extra[key] = ttype
+        if ttype:
+            s.extra.TERM = ttype
+
+        _lastval = s.extra.get(f'ttype{s._ttype_count-1}', '')
+        
+        if key != 'ttype1' and ttype == s.extra.get('ttype1', None):
+            # cycle has looped, stop
+            s.log.debug('ttype cycle stop at %s: %s, looped.', key, ttype)
+            s.extra.term_done = True
+        
+        elif (not ttype or s._ttype_count > s.TTYPE_LOOPMAX):
+            # empty reply string or too many responses!
+            s.log.warning('ttype cycle stop at %s: %s.', key, ttype)
+           
+        elif (s._ttype_count == 3 and ttype.upper().startswith('MTTS ')):
+            val = s.extra.ttype2
+            s.log.debug(
+                'ttype cycle stop at %s: %s, using %s from ttype2.',
+                key, ttype, val)
+            s.extra.TERM = val
+
+        elif (ttype == _lastval):
+            s.log.debug('ttype cycle stop at %s: %s, repeated.', key, ttype)
+            s.extra.term_done = True
+
+        else:
+            s.log.debug('ttype cycle cont at %s: %s.', key, ttype)
+            s._ttype_count += 1
+            await s.send_subneg(TTYPE, SEND)
+
+
+    # client
+
+    async def handle_do(self):
+        s = self.stream
+        if not s.client:
+            return False
+        if not s.extra.get('tterm',''):
+            return False
+        return True
+
+    async def process_sb(self, buf):
+        """Callback handles IAC-SB-TTYPE-<buf>-SE."""
+        s = self.stream
+        opt,buf = buf[0],buf[1:]
+        from ..telopt import IS,SEND
+
+        opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)           
+
+        if opt == IS:
+            # server is supposed to have this
+            if s.server:
+                s.log.debug('R: TTYPE %s: %r', opt_kind, buf)
+                ttype_str = buf.decode('ascii')
+                await self.handle_recv(ttype_str)
+                return
+
+        elif opt == SEND:
+            # only a client is supposed to have this
+            if s.client and s.extra.get('term',None):
+                s.log.debug('R: TTYPE %s: %r', opt_kind, buf)
+                ttype_str = s.extra.term
+                await s.send_subneg(TTYPE, IS, ttype_str.encode("ascii"))
+                return
+
+        s.log.warning('R: TTYPE %s: %r', opt_kind, buf)
+        await self.loc.send_no(Forced.yes)
+        await self.rem.send_no(Forced.yes)
 
 
 class CHARSET(BaseOption):
@@ -81,7 +185,7 @@ class CHARSET(BaseOption):
         """ 
         await self.handle_do()
 
-    async def handle_sb(self, buf):
+    async def process_sb(self, buf):
         s = self.stream
         opt,buf = buf[0],buf[1:]
         from ..telopt import REQUEST,ACCEPTED,REJECTED, Req

@@ -125,21 +125,16 @@ class CtxObj:
 
 async def spawn(tg, proc, *args, _name=None, **kwargs):
     """
-    Helper to start a subtask. Like `anyio.abc.TaskGroup.spawn` but
+    Helper to start a subtask. Like `anyio.abc.TaskGroup.start_soon` but
     (a) accepts keyword arguments, (b) returns an `anyio.abc.CancelScope`
     which can be used to kill the task.
     """
-    sc = None
-    async def _spawn(evt, p,a,k):
-        nonlocal sc
+    async def _spawn(p,a,k, *, task_status):
         with anyio.CancelScope() as sc:
-            evt.set()
+            task_status.started(sc)
             await p(*a,**k)
 
-    evt = anyio.Event()
-    tg.spawn(_spawn, evt, proc,args,kwargs, name=_name)
-    await evt.wait()
-    return sc
+    return await tg.start(_spawn, proc,args,kwargs, name=_name)
 
 class ValueEvent:
     """A waitable value useful for inter-task synchronization,

@@ -63,7 +63,9 @@ class _Option(int):
     """
     Internal class to hold options.
     """
-    def __new__(cls, name, value):
+    def __new__(cls, name, value,*x):
+        if x:
+            import pdb;pdb.set_trace()
         if not isinstance(value,int):
             import pdb;pdb.set_trace()
         obj = int.__new__(cls, value)
@@ -101,8 +103,14 @@ class _reg(type):
         if cls.value is not None:
             if cls.name is None:
                 cls.name = name
-            Opt.register(cls.value, cls.name)
-            OptH.register(cls)
+            try:
+                Opt(cls.value)
+            except KeyError:
+                Opt.register(cls.value, cls.name)
+            try:
+                OptH(cls.value)
+            except KeyError:
+                OptH.register(cls)
         return cls
 
 class BaseOption(metaclass=_reg):
@@ -118,15 +126,19 @@ class BaseOption(metaclass=_reg):
         if self.value is None:
             if value is None:
                 raise RuntimeError("You need to set the option value")
-            self.value = value
+            self.value = getattr(value,'value',value)
         elif value is not None:
             raise RuntimeError("You cannot override the option value")
+        self._setup_half()
 
+    def _setup_half(self):
+        # factored out so we can override it, esp for testing
         self.loc = HalfOption(self, True)
         self.rem = HalfOption(self, False)
 
     def __repr__(self):
-        return "%s:%r/%r" % (Opt(self.value).name, self.loc, self.rem)
+        return "%s:%s:%r/%r" % (self.__class__.__name__,Opt(self.value).value, self.loc, self.rem)
+    __str__=__repr__
 
 
     @property
@@ -142,7 +154,7 @@ class BaseOption(metaclass=_reg):
 
     async def set_local(self, value:bool = None, force:Forced = Forced.no) -> bool:
         if value is None:
-            return self.has_will
+            return self.has_local
         if value:
             return await self.send_will(force)
         else:
@@ -151,7 +163,7 @@ class BaseOption(metaclass=_reg):
 
     async def set_remote(self, value:bool = None, force:Forced = Forced.no) -> bool:
         if value is None:
-            return self.has_do
+            return self.has_remote
         if value:
             return await self.send_do(force)
         else:
@@ -204,7 +216,7 @@ class BaseOption(metaclass=_reg):
 
 
     @property
-    def has_will(self):
+    def has_local(self):
         if self.loc.broken:
             raise RuntimeError("local option: broken")
         if self.loc.waiting:
@@ -212,11 +224,11 @@ class BaseOption(metaclass=_reg):
         return self.loc.state
 
     @property
-    def has_do(self):
+    def has_remote(self):
         if self.rem.broken:
-            raise RuntimeError("local option: broken")
+            raise RuntimeError("remote option: broken")
         if self.rem.waiting:
-            raise RuntimeError("local option: waiting")
+            raise RuntimeError("remote option: waiting")
         return self.rem.state
 
 
@@ -288,7 +300,22 @@ class BaseOption(metaclass=_reg):
         """
         pass
 
-    async def handle_sb(self, data: bytes):
+    # Callback after the remote side wanted an option and the ACK reply has
+    # been sent.
+    # Override this for post-processing.
+
+    async def after_handle_do(self) -> None:
+        """Post-process incoming DO.
+        """
+        pass
+
+    async def after_handle_will(self) -> None:
+        """Post-process incoming WILL.
+        """
+        pass
+
+
+    async def process_sb(self, data: bytes) -> None:
         """
         Incoming subnegotiation message.
 
@@ -296,8 +323,8 @@ class BaseOption(metaclass=_reg):
         """
         s = self._stream()
         s.log.warning("Subneg for %s not implemented: %r", self.value, data)
-        s.start_soon(self.send_dont)
-        s.start_soon(self.send_wont)
+        s.start_soon(self.send_dont, Forced.yes)
+        s.start_soon(self.send_wont, Forced.yes)
 
 
 class HalfOption:
@@ -325,7 +352,7 @@ class HalfOption:
         self._local = local
 
     def __repr__(self):
-        s = "?" if state is None else "+" if state else "-"
+        s = "?" if self.state is None else "+" if self.state else "-"
         if self.waiting:
             s += "w"
         if self.broken:
@@ -355,7 +382,19 @@ class HalfOption:
 
         Forwards to handle_dont / handle_wont.
         """
+        opt = self._opt()
         return await (opt.handle_dont if self._local else opt.handle_wont)()
+
+
+    async def after_handle_yes(self) -> Optional[bool]:
+        """
+        Enable this option (we get an unsolicited DO / WILL).
+        Called only if the local state changes.
+
+        Forwards to handle_do / handle_will.
+        """
+        opt = self._opt()
+        return await (opt.after_handle_do if self._local else opt.after_handle_will)()
 
 
     async def reply_yes(self) -> Optional[bool]:
@@ -383,9 +422,9 @@ class HalfOption:
         """
         while self.waiting:
             await self.waiting.wait()
-        if self.state is True and forced < Forced.repeat:
+        if self.state is True and force < Forced.repeat:
             return
-        if self.state is not None and forced < Forced.yes:
+        if self.state is not None and force < Forced.yes:
             return
 
         if not self.broken:
@@ -399,9 +438,9 @@ class HalfOption:
         """
         while self.waiting:
             await self.waiting.wait()
-        if self.state is False and forced < Forced.repeat:
+        if self.state is False and force < Forced.repeat:
             return
-        if self.state is not None and forced < Forced.yes:
+        if self.state is not None and force < Forced.yes:
             return
 
         if not self.broken:
@@ -444,6 +483,7 @@ class HalfOption:
                 return
             self.state = True
             await opt._send(WILL if self._local else DO)
+            await self.after_handle_yes()
 
 
     async def process_no(self) -> None:

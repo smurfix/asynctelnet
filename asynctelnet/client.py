@@ -58,6 +58,8 @@ class TelnetClient(BaseClient):
         self.extra.tspeed = '{},{}'.format(*tspeed)
         self.extra.xdisploc = xdisploc
 
+    async def setup(self, has_tterm=None):
+        """Called after setting up."""
         self.opt.add(TTYPE)
         self.opt.add(SGA)
         self.opt.add(ECHO)
@@ -66,8 +68,6 @@ class TelnetClient(BaseClient):
         self.opt.add(NAWS)
         self.opt.add(CHARSET)
 
-    async def setup(self, has_tterm=None):
-        """Called after setting up."""
         await super().setup()
 
         # No terminal? don't try.
@@ -77,16 +77,16 @@ class TelnetClient(BaseClient):
 
         if has_tterm:
             async with anyio.create_task_group() as tg:
-                tg.spawn(self.remote_option, SGA, True)
-                tg.spawn(self.remote_option, ECHO, True)
-                tg.spawn(self.remote_option, BINARY, True)
-                tg.spawn(self.local_option, NEW_ENVIRON, True)
-                tg.spawn(self.local_option, NAWS, True)
-                tg.spawn(self.local_option, BINARY, True)
+                tg.start_soon(self.remote_option, SGA, True)
+                tg.start_soon(self.remote_option, ECHO, True)
+                tg.start_soon(self.remote_option, BINARY, True)
+                tg.start_soon(self.local_option, NEW_ENVIRON, True)
+                tg.start_soon(self.local_option, NAWS, True)
+                tg.start_soon(self.local_option, BINARY, True)
                 if self.extra.charset:
                     await self._request_charset()
                 else:
-                    tg.spawn(self.remote_option, CHARSET, True)
+                    tg.start_soon(self.remote_option, CHARSET, True)
         # 
 
 #       # Wire extended rfc callbacks for requests of
@@ -108,8 +108,6 @@ class TelnetClient(BaseClient):
         return True
     async def handle_will_echo(self):
         return True
-    async def handle_do_ttype(self):
-        return bool(self.extra.term)
 
     def _intercept(self, msg):
         super()._intercept(msg)

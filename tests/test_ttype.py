@@ -3,32 +3,40 @@
 import anyio
 
 # local imports
-from asynctelnet.telopt import IS, WILL, TTYPE
-from tests.accessories import BaseTestClient, Server, NoTtype
+from asynctelnet.telopt import IS, WILL
+from asynctelnet.options import TTYPE
+from tests.accessories import BaseTestClient, Server, NoTtype, ignore_option
 
 # 3rd party
 import pytest
 
-class ClientTestTtype(NoTtype, BaseTestClient):
-    pass
+class _NHT:
+    async def setup(self, has_tterm):
+        await super().setup()
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype(server):
-    """Test Server's callback method handle_recv_ttype()."""
+    """Test Server's callback method handle_recv()."""
     # given
     _waiter = anyio.Event()
 
-    class ServerTestTtype(NoTtype, Server):
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
-            if self.extra.term_done:
+    class OptTtype(TTYPE):
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
+            s=self.stream
+            if s.extra.term_done:
                 _waiter.set()
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         await client.send_subneg(TTYPE, IS, b'ALPHA')
         await client.send_subneg(TTYPE, IS, b'ALPHA')
 
@@ -45,7 +53,7 @@ async def test_telnet_server_on_ttype(server):
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_beyond_max(server):
     """
-    Test Server's callback method handle_recv_ttype() with long list.
+    Test Server's callback method handle_recv() with long list.
 
     After TTYPE_LOOPMAX, we stop requesting and tracking further
     terminal types; something of an error (a warning is emitted),
@@ -60,17 +68,24 @@ async def test_telnet_server_on_ttype_beyond_max(server):
 
     assert len(given_ttypes) > Server.TTYPE_LOOPMAX
 
-    class ServerTestTtype(NoTtype, Server):
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
+
+    class OptTtype(TTYPE):
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
+            s=self.stream
             if ttype == given_ttypes[-1]:
                 _waiter.set()
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         for send_ttype in given_ttypes:
             await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
@@ -94,22 +109,27 @@ async def test_telnet_server_on_ttype_beyond_max(server):
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_empty(server):
-    """Test Server's callback method handle_recv_ttype(): empty value is ignored. """
+    """Test Server's callback method handle_recv(): empty value is ignored. """
     # given
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', '', 'BETA')
 
-    class ServerTestTtype(NoTtype, Server):
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
+    class OptTtype(TTYPE):
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
             if ttype == given_ttypes[-1]:
                 _waiter.set()
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         for send_ttype in given_ttypes:
             await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
@@ -125,25 +145,30 @@ async def test_telnet_server_on_ttype_empty(server):
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_looped(server):
-    """Test Server's callback method handle_recv_ttype() when value looped. """
+    """Test Server's callback method handle_recv() when value looped. """
     # given
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'ALPHA')
 
-    class ServerTestTtype(NoTtype, Server):
+    class OptTtype(TTYPE):
         count = 1
 
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
             if self.count == len(given_ttypes):
                 _waiter.set()
             self.count += 1
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         for send_ttype in given_ttypes:
             await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
@@ -160,25 +185,30 @@ async def test_telnet_server_on_ttype_looped(server):
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_repeated(server):
-    """Test Server's callback method handle_recv_ttype() when value repeats. """
+    """Test Server's callback method handle_recv() when value repeats. """
     # given
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'GAMMA')
 
-    class ServerTestTtype(NoTtype, Server):
+    class OptTtype(TTYPE):
         count = 1
 
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
             if self.count == len(given_ttypes):
                 _waiter.set()
             self.count += 1
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         for send_ttype in given_ttypes:
             await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 
@@ -196,25 +226,30 @@ async def test_telnet_server_on_ttype_repeated(server):
 
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype_mud(server):
-    """Test Server's callback method handle_recv_ttype() for MUD clients (MTTS). """
+    """Test Server's callback method handle_recv() for MUD clients (MTTS). """
     # given
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'MTTS 137')
 
-    class ServerTestTtype(NoTtype, Server):
+    class OptTtype(TTYPE):
         count = 1
 
-        async def handle_recv_ttype(self, ttype):
-            await super().handle_recv_ttype(ttype)
+        async def handle_recv(self, ttype):
+            await super().handle_recv(ttype)
             if self.count == len(given_ttypes):
                 _waiter.set()
             self.count += 1
+
+    class ServerTestTtype(NoTtype, _NHT, Server):
+        test_opt = OptTtype
+    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+        test_opt = ignore_option(TTYPE)
 
     async with server(factory=ServerTestTtype, encoding=None) as srv, \
             srv.client(factory=ClientTestTtype, encoding=None) as client:
 
         # exercise,
-        await client.send_iac(WILL, TTYPE)
+        await client.send_iac(WILL, TTYPE.value)
         for send_ttype in given_ttypes:
             await client.send_subneg(TTYPE, IS, send_ttype.encode('ascii'))
 

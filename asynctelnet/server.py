@@ -60,6 +60,7 @@ class TelnetServer(BaseServer):
         self.extra.rows = rows
         self.extra.timeout = timeout
 
+    async def setup(self, has_tterm=None):
         self.opt.add(TTYPE)
         self.opt.add(SGA)
         self.opt.add(ECHO)
@@ -68,7 +69,6 @@ class TelnetServer(BaseServer):
         self.opt.add(NAWS)
         self.opt.add(CHARSET)
 
-    async def setup(self, has_tterm=None):
         await super().setup()
 
         # No terminal? don't try.
@@ -78,12 +78,12 @@ class TelnetServer(BaseServer):
 
         if has_tterm:
             async with anyio.create_task_group() as tg:
-                tg.spawn(self.local_option, SGA, True)
-                tg.spawn(self.local_option, ECHO, True)
-                tg.spawn(self.local_option, BINARY, True)
-                tg.spawn(self.remote_option, NEW_ENVIRON, True)
-                tg.spawn(self.remote_option, NAWS, True)
-                tg.spawn(self.remote_option, BINARY, True)
+                tg.start_soon(self.local_option, SGA, True)
+                tg.start_soon(self.local_option, ECHO, True)
+                tg.start_soon(self.local_option, BINARY, True)
+                tg.start_soon(self.remote_option, NEW_ENVIRON, True)
+                tg.start_soon(self.remote_option, NAWS, True)
+                tg.start_soon(self.remote_option, BINARY, True)
                 if isinstance(self.extra.charset, str):
                     if self.extra.charset:
                         # We have a charset we want to use. Send WILL.
@@ -91,7 +91,7 @@ class TelnetServer(BaseServer):
                     else:
                         # We don't have a charset we want to use. Ask the
                         # remote to send us a list.
-                        tg.spawn(self.remote_option, CHARSET, True)
+                        tg.start_soon(self.remote_option, CHARSET, True)
 
         # TODO request environment
 
@@ -114,10 +114,6 @@ class TelnetServer(BaseServer):
         return True
     async def handle_do_echo(self):
         return True
-    async def handle_will_ttype(self):
-        if not self.extra.term:
-            return False
-        return super().handle_will_ttype()
 
     @asynccontextmanager
     async def with_timeout(self, duration=-1):
@@ -204,49 +200,6 @@ class TelnetServer(BaseServer):
     async def handle_recv_tspeed(self, rx, tx):
         """Callback for TSPEED response, :rfc:`1079`."""
         self.extra.tspeed = '{0},{1}'.format(rx, tx)
-
-    async def handle_recv_ttype(self, ttype):
-        """Callback for TTYPE response, :rfc:`930`."""
-        # TTYPE may be requested multiple times, we honor this system and
-        # attempt to cause the client to cycle, as their first response may
-        # not be their most significant. All responses held as 'ttype{n}',
-        # where {n} is their serial response order number.
-        #
-        # The most recently received terminal type by the server is
-        # assumed TERM by this implementation, even when unsolicited.
-        key = 'ttype{}'.format(self._ttype_count)
-        self.extra[key] = ttype
-        if ttype:
-            self.extra.TERM = ttype
-
-        _lastval = self.extra.get(f'ttype{self._ttype_count-1}', '')
-
-        if key != 'ttype1' and ttype == self.extra.get('ttype1', None):
-            # cycle has looped, stop
-            self.log.debug('ttype cycle stop at {0}: {1}, looped.' .format(key, ttype))
-            self.extra.term_done = True
-
-        elif (not ttype or self._ttype_count > self.TTYPE_LOOPMAX):
-            # empty reply string or too many responses!
-            self.log.warning('ttype cycle stop at {0}: {1}.'.format(key, ttype))
-
-        elif (self._ttype_count == 3 and ttype.upper().startswith('MTTS ')):
-            val = self.extra.ttype2
-            self.log.debug(
-                'ttype cycle stop at {0}: {1}, using {2} from ttype2.'
-                .format(key, ttype, val))
-            self.extra.TERM = val
-
-        elif (ttype == _lastval):
-            self.log.debug('ttype cycle stop at {0}: {1}, repeated.'
-                           .format(key, ttype))
-            self.extra.term_done = True
-
-        else:
-            self.log.debug('ttype cycle cont at {0}: {1}.'
-                           .format(key, ttype))
-            self._ttype_count += 1
-            await self.send_subneg(TTYPE, SEND)
 
     def on_xdisploc(self, xdisploc):
         """Callback for XDISPLOC response, :rfc:`1096`."""

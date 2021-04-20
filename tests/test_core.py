@@ -353,7 +353,7 @@ async def test_telnet_client_negotiation_fail(bind_host, unused_tcp_port):
 
     async with await anyio.create_tcp_listener(local_host=bind_host, local_port=unused_tcp_port) as s, \
         anyio.create_task_group() as tg:
-        tg.spawn(s.serve, server)
+        tg.start_soon(s.serve, server)
         async with open_connection(client_factory=TimeoutClient, host=bind_host, port=unused_tcp_port) as client:
             tg.cancel_scope.cancel()
 

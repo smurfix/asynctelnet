@@ -50,12 +50,12 @@ def server(bind_host, unused_tcp_port):
                 kw["term"] = None
             async with open_connection(client_factory=factory, **kw) as client:
                 if with_reader:
-                    res.tg.spawn(shell_, client)
+                    res.tg.start_soon(shell_, client)
                 yield client
 
         async with anyio.create_task_group() as tg:
             evt=anyio.Event()
-            tg.spawn(partial(server_loop, protocol_factory=factory, shell=myshell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
+            tg.start_soon(partial(server_loop, protocol_factory=factory, shell=myshell, evt=evt,host=bind_host,port=unused_tcp_port, **kw))
             res.tcp_port = unused_tcp_port
             res.client = gen_client
             res.tg = tg

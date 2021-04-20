@@ -232,5 +232,5 @@ async def telnet_client_shell(telnet_stream):
                 else:
                     await term.send(out)
 
-        tg.spawn(read_stdin)
-        tg.spawn(read_telnet)
+        tg.start_soon(read_stdin)
+        tg.start_soon(read_telnet)

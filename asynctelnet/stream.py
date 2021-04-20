@@ -302,13 +302,13 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Get our option, i.e. return True if we got DO.
         """
-        return self.opt[option].has_will
+        return self.opt[option].has_local
 
     def remote_status(self, option:int) -> bool:
         """
         Get their option, i.e. return True if we got WILL.
         """
-        return self.opt[option].has_do
+        return self.opt[option].has_remote
 
 
     @asynccontextmanager
@@ -320,7 +320,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         async with anyio.create_task_group() as tg:
             self._tg = tg
             self._write_queue, self._read_queue = anyio.create_memory_object_stream(100)
-            tg.spawn(self._receive_loop)
+            tg.start_soon(self._receive_loop)
 
             try:
                 self.log.debug("Start setup")
@@ -328,8 +328,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 self.log.debug("Finished setup")
                 yield self
             finally:
-                del self.extra
-                del self.opt
                 self.log.debug("Start teardown")
                 died = True
                 with anyio.move_on_after(2):
@@ -337,11 +335,16 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     died = False
                 self.log.debug("%s teardown", "Interrupted" if died else "Finished")
                 tg.cancel_scope.cancel()
+                self._unref()
+
+    def _unref(self):
+        del self.extra
+        del self.opt
 
     def start_soon(self, p,*a,**k):
         async def _work(p,a,k):
             await p(*a,**k)
-        self._tg.start_soon(p,a,k)
+        self._tg.start_soon(_work,p,a,k)
 
     async def setup(self):
         """
@@ -349,8 +352,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         if self.force_binary:
             async with anyio.create_task_group() as tg:
-                tg.spawn(self.opt.BINARY.send_will)
-                tg.spawn(self.opt.BINARY.send_do)
+                tg.start_soon(self.opt.BINARY.send_will)
+                tg.start_soon(self.opt.BINARY.send_do)
 
     async def teardown(self):
         """
@@ -569,7 +572,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         :param bytes buffer: Message buffer. Byte 0 is the command.
         """
-        await self.opt[opt].handle_sb(buf)
+        await self.opt[opt].process_sb(buf)
 
 
     async def send(self, buf, *, escape_iac=True, locked = False):
@@ -601,12 +604,15 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                             'send IAC WILL BINARY first: buf={buf!r}')
             buf = self._escape_iac(buf)
 
-        if locked:
-            assert self._write_lock.is_locked()
-            await self._stream.send(buf)
-        else:
-            async with self._write_lock:
+        try:
+            if locked:
+                assert self._write_lock.is_locked()
                 await self._stream.send(buf)
+            else:
+                async with self._write_lock:
+                    await self._stream.send(buf)
+        except anyio.ClosedResourceError:
+            pass
 
     @staticmethod
     def _escape_iac(buf):
@@ -641,10 +647,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
     def __repr__(self):
         """Description of stream encoding state."""
-        try:
-            return '<%s: %s>' % (self.__class__.__name__, ' '.join(self._repr()))
-        except Exception as exc:
-            return '<%s: %r>' % (self.__class__.__name__, exc)
+        return '<%s: %s>' % (self.__class__.__name__, ' '.join(self._repr()))
 
     async def feed_byte(self, byte) -> bool:
         """
@@ -739,7 +742,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         # opts: dict with the option's state
         # reply: (reject,accept) command for replies
         # want: does the remote want a positive or a negative reply?
-        self.log.debug("R: IAC %s %s", cmd.name, opt.value)
+        if opt.name is None:
+            import pdb;pdb.set_trace()
+        self.log.debug("R: IAC %s %s", cmd.name, opt.name)
         if cmd == DO:
             await opt.loc.process_yes()
         elif cmd == DONT:
@@ -759,12 +764,12 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         Whether binary data is expected to be received on reader, :rfc:`856`.
         """
-        return self.opt.BINARY.has_do
+        return self.opt.BINARY.has_remote
 
     @property
     def outbinary(self):
         """Whether binary data may be written to the writer, :rfc:`856`."""
-        return self.opt.BINARY.has_will
+        return self.opt.BINARY.has_local
 
 
     async def echo(self, data:Union[bytes,str]):
@@ -798,9 +803,9 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         chose to duplicate our input to standard out ourselves.
         """
         if self.server:
-            return self.opt.ECHO.has_will
+            return self.opt.ECHO.has_local
         else:
-            return self.opt.ECHO.has_do
+            return self.opt.ECHO.has_remote
 
     @property
     def mode(self):
@@ -820,17 +825,15 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 send, but also transmits buffer up to and including special
                 line characters (SLCs).
         """
-        if self._remote_option.get(LINEMODE, False):
+        if self.opt.LINEMODE.has_remote:
             if self._linemode.local:
                 return 'local'
             return 'remote'
         if self.server:
-            if (self._local_option.get(ECHO, False) and
-                    self._local_option.get(SGA, False)):
+            if self.opt.ECHO.has_local and self.opt.SGA.has_local:
                 return 'kludge'
             return 'local'
-        if (self._remote_option.get(ECHO, False) and
-                self._remote_option.get(SGA, False)):
+        if self.opt.ECHO.has_remote and self.opt.SGA.has_remote:
             return 'kludge'
         return 'local'
 
@@ -1402,32 +1405,6 @@ class TelnetStream(BaseTelnetStream):
         await self.send_subneg(XDISPLOC,SEND)
         return True
 
-    async def handle_will_ttype(self):
-        """
-        Send TTYPE SEND sub-negotiation, :rfc:`930`.
-
-        Returns True if request is valid for telnet state, and was sent.
-        """
-        if not self.server:
-            self.log.error('TTYPE SEND may only be sent by server')
-            return False
-        if not hasattr(self, "handle_send_ttype"):
-            return False
-        return self.send_subneg(TTYPE, SEND)
-
-    async def handle_do_ttype(self):
-        """
-        Send TTYPE SEND sub-negotiation, :rfc:`930`.
-
-        Returns True if request is valid for telnet state, and was sent.
-        """
-        if self.server:
-            self.log.error('TTYPE IS may only be sent by client')
-            return False
-        if not hasattr(self, "handle_recv_ttype"):
-            return False
-        return True
-
     async def handle_will_forwardmask(self, fmask=None):
         """
         Request the client forward their terminal control characters.
@@ -1779,30 +1756,6 @@ class TelnetStream(BaseTelnetStream):
             xdisploc_str = (await self._ext_send_callback[XDISPLOC]()).encode('ascii')
             self.log.debug('send IAC SB XDISPLOC IS %r IAC SE', xdisploc_str)
             await self.send_subneg(XDISPLOC,IS+xdisploc_str)
-
-    async def handle_subneg_ttype(self, buf):
-        """Callback handles IAC-SB-TTYPE-<buf>-SE."""
-        opt,buf = buf[0],buf[1:]
-
-        assert opt in (IS, SEND), opt
-        opt_kind = {IS: 'IS', SEND: 'SEND'}.get(opt)
-        self.log.debug('recv %s %s: %r', TTYPE, opt_kind, buf)
-
-        if opt == IS:
-            # only a server is supposed to have this
-            if not hasattr(self,"handle_recv_ttype"):
-                self.log.error(f'SE: dunno how to recv: TTYPE {opt}')
-                return
-            ttype_str = buf.decode('ascii')
-            await self.handle_recv_ttype(ttype_str)
-
-        elif opt == SEND:
-            # only a client is supposed to have this
-            if not hasattr(self,"handle_send_ttype"):
-                self.log.error(f'SE: dunno how to send: TTYPE {opt}')
-                return
-            ttype_str = (await self.handle_send_ttype()).encode('ascii')
-            await self.send_subneg(TTYPE, IS, ttype_str)
 
     async def handle_subneg_new_environ(self, buf):
         """

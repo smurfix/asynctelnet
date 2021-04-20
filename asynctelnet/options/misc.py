@@ -142,11 +142,7 @@ class SNDLOC(BaseOption):
     """
     value = 23
 
-class TTYPE(BaseOption):
-    """
-    terminal type
-    """
-    value = 24
+# TTYPE 24 basic
 
 class EOR(BaseOption):
     """

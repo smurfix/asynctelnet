@@ -49,6 +49,7 @@ class StreamOptions(dict):
 
     def __getitem__(self, value: int):
         """Look up by option / value."""
+        value = getattr(value,'value',value)
         try:
             return super().__getitem__(value)
         except KeyError:
@@ -57,7 +58,6 @@ class StreamOptions(dict):
             except KeyError:
                 # Ugh, we don't even know this option.
                 # Instantiate a subclass for it.
-                import pdb;pdb.set_trace()
                 opt = _make_opt(value)
             self[opt.value] = iopt = BaseOption(self._stream(), value=opt)
             return iopt
@@ -72,7 +72,8 @@ class StreamOptions(dict):
         Use this option processor
         """
         if opt.value in self:
-            raise RuntimeError("A handler for this option already exists")
+            self.stream.log.debug("A handler for %s already exists", opt)
+            return
 
         if isinstance(opt, _Option):
             opt = BaseOption(value=opt)
