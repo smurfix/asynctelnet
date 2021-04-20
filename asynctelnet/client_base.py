@@ -1,14 +1,8 @@
 """Module provides class BaseClient."""
 
-import logging
-import datetime
-import traceback
-import weakref
-import sys
-
 from .stream import TelnetStream
-from .telopt import name_commands
-from .accessories import CtxObj
+
+import logging
 
 __all__ = ('BaseClient',)
 

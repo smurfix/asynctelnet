@@ -3,7 +3,7 @@ import pytest
 from functools import partial
 import anyio
 
-from asynctelnet.server import server_loop,TelnetServer 
+from asynctelnet.server import server_loop,TelnetServer, BaseServer
 from asynctelnet.client import BaseClient, TelnetClient
 from asynctelnet.options import BaseOption, HalfOption, Forced
 
@@ -24,6 +24,9 @@ class Test_Opt:
         pass
 
 class Server(Test_Opt, TelnetServer):
+    pass
+
+class BaseTestServer(Test_Opt, BaseServer):
     pass
 
 async def shell(client):
