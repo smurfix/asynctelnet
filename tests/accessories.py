@@ -4,25 +4,27 @@ from functools import partial
 import anyio
 
 from asynctelnet.server import server_loop,TelnetServer 
-from asynctelnet.client import BaseClient
+from asynctelnet.client import BaseClient, TelnetClient
 from asynctelnet.options import BaseOption, HalfOption, Forced
 
 class Test_Opt:
     test_opt = None
 
-    async def setup(self):
+    async def setup(self, **kw):
         if self.test_opt is not None:
             if isinstance(self.test_opt,(list,tuple)):
                 for opt in self.test_opt:
                     self.opt.add(opt)
             else:
                 self.opt.add(self.test_opt)
-        await super().setup()
+        await super().setup(**kw)
 
-class Server(Test_Opt, TelnetServer):
     def _unref(self):
         # don't clean up, tests need the data
         pass
+
+class Server(Test_Opt, TelnetServer):
+    pass
 
 async def shell(client):
     client.log.debug("R start")
@@ -82,9 +84,9 @@ class BaseTestClient(Test_Opt, BaseClient):
     def __init__(self, conn, term=None, cols=None, rows=None, tspeed=None, xdisploc=None, **kw):
         super().__init__(conn, **kw)
 
-    def _unref(self):
-        # don't clean up, tests need the data
-        pass
+
+class Client(Test_Opt, TelnetClient):
+    pass
 
 @pytest.fixture(params=['127.0.0.1'])
 def server(bind_host, unused_tcp_port):

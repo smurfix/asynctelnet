@@ -35,6 +35,10 @@ class TTYPE(BaseOption):
         s = self.stream
         await s.send_subneg(TTYPE, SEND)
 
+    async def handle_send(self):
+        s = self.stream
+        return s.extra.term
+
     async def handle_recv(self, ttype):
         """Callback for TTYPE response, :rfc:`930`."""
         # TTYPE may be requested multiple times, we honor this system and
@@ -110,7 +114,7 @@ class TTYPE(BaseOption):
             # only a client is supposed to have this
             if s.client and s.extra.get('term',None):
                 s.log.debug('R: TTYPE %s: %r', opt_kind, buf)
-                ttype_str = s.extra.term
+                ttype_str = self.handle_send()
                 await s.send_subneg(TTYPE, IS, ttype_str.encode("ascii"))
                 return
 
@@ -125,6 +129,20 @@ class CHARSET(BaseOption):
     """
     value = 42
 
+    async def send_request(self) -> bool:
+        """
+        Send a CHARSET
+        """
+        s = self.stream
+        if not self.loc.send_yes():
+            return False
+        if not s._charset_lock:
+            await self.send_sb()
+
+        if s._charset_lock:
+            await s._charset_lock.wait()
+        return True
+
     async def send_sb(self, **kw):
         from ..telopt import REQUEST
         s = self.stream
@@ -133,7 +151,7 @@ class CHARSET(BaseOption):
         if charsets is None:
             s._charsets_wanted = charsets = s.get_supported_charsets() or ("UTF-8","LATIN9","LATIN1","US-ASCII")
 
-        if self.has_will:
+        if self.has_local:
             if not s._charset_lock:
                 s._charset_lock = anyio.Event()
             if not charsets:
@@ -217,7 +235,7 @@ class CHARSET(BaseOption):
 
             if selected is None:
                 await s.send_subneg(CHARSET, REJECTED)
-                if s.client and s._charset_lock is not None and self.has_will:
+                if s.client and s._charset_lock is not None and self.has_local:
                     # The server has rejected my request due to a
                     # collision. Thus I need to retry.
                     s._charset_retry = True

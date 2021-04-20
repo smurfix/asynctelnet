@@ -2,11 +2,11 @@ import pytest
 import socket
 import anyio
 
-from tests.accessories import shell as shell_, Server
+from tests.accessories import shell as shell_, Server, Client
 from contextlib import asynccontextmanager, closing
 from asynctelnet.accessories import AttrDict
 from asynctelnet.server import server_loop
-from asynctelnet.client import open_connection, TelnetClient
+from asynctelnet.client import open_connection
 from functools import partial
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def server(bind_host, unused_tcp_port):
             await shell(client)
 
         @asynccontextmanager
-        async def gen_client(*, factory=TelnetClient, with_reader=True, **kw):
+        async def gen_client(*, factory=Client, with_reader=True, **kw):
             if "host" not in kw:
                 kw["host"] = bind_host
             if "port" not in kw:

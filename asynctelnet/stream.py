@@ -213,6 +213,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         self._charset = encoding
         self._charset_errors = encoding_errors
+        # flag for charset negotiation
         self._use_current_charset = bool(encoding)
 
         self._set_charset_encoder(encoding)
@@ -633,9 +634,11 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
     def _repr(self):
         info = []
         if self.opt:
-
             info.append('opt:')
-            for v in self.opt.values():
+            for k in sorted(self.opt):
+                v = self.opt[k]
+                if v.loc.idle and v.rem.idle:
+                    continue
                 info.append(repr(v))
 
         if self.extra:
@@ -742,8 +745,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         # opts: dict with the option's state
         # reply: (reject,accept) command for replies
         # want: does the remote want a positive or a negative reply?
-        if opt.name is None:
-            import pdb;pdb.set_trace()
         self.log.debug("R: IAC %s %s", cmd.name, opt.name)
         if cmd == DO:
             await opt.loc.process_yes()
@@ -1120,7 +1121,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         Completed charset subnegotiation.
         Queues a callback to set the decoder in-line.
 
-        Only clears the lock if `charset` is not a non-empty string.
+        This also clears the lock.
         """
         if charset:
             try:

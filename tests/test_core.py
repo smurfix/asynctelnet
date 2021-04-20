@@ -9,13 +9,13 @@ import unittest.mock
 
 # local imports
 import asynctelnet
-from asynctelnet.client import TelnetClient, open_connection
-from tests.accessories import Server, shell
+from asynctelnet.client import open_connection
+from tests.accessories import Server, shell, Client
 from anyio.streams.buffered import BufferedByteReceiveStream
 
 # 3rd party
 import pytest
-import pexpect
+#import pexpect  # skip
 
 
 @pytest.mark.anyio
@@ -31,13 +31,13 @@ async def test_open_connection(bind_host, server):
     evt = anyio.Event()
     async def server_shell(stream):
         evt.set()
-        assert repr(stream) == "<Server: remote: -TTYPE extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
+        assert repr(stream) == "<Server: opt: TTYPE:24:?/- extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
         await anyio.sleep(0.5)
 
     async with server(shell=server_shell) as srv, \
         srv.client() as client:
 
-        assert repr(client) == "<TelnetClient: local: -TTYPE extra: charset='' lang='C' cols=80 rows=25 term=None tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
+        assert repr(client) == "<Client: opt: TTYPE:24:+/? extra: charset='' lang='C' cols=80 rows=25 term=None tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
 
 
 @pytest.mark.anyio
@@ -125,7 +125,7 @@ async def test_telnet_server_advanced_negotiation(server):
     """Test asynctelnet.TelnetServer() advanced negotiation."""
     # given
     from asynctelnet.telopt import (
-        IAC, DO, WILL, SB, TTYPE, NEW_ENVIRON, NAWS, SGA, ECHO, CHARSET, BINARY
+        TTYPE, NEW_ENVIRON, NAWS, SGA, ECHO, CHARSET, BINARY
     )
 
     async with server(term="yes", encoding="utf-8") as srv, \
@@ -133,13 +133,15 @@ async def test_telnet_server_advanced_negotiation(server):
         await srv.evt.wait()
 
         # verify,
-        assert srv.last._local_option == {
+        for k,v in {
             SGA: True,
             ECHO: True,
             BINARY: True,
             CHARSET: True,
-        }
-        assert srv.last._remote_option == {
+            }.items():
+            assert srv.last.opt[k].loc.state is v
+
+        for k,v in {
             BINARY: True,
             NEW_ENVIRON: True,
             CHARSET: True,
@@ -147,7 +149,8 @@ async def test_telnet_server_advanced_negotiation(server):
             TTYPE: True,
             # remaining unreplied values from begin_advanced_negotiation()
             NAWS: True,
-        }
+            }.items():
+            assert srv.last.opt[k].rem.state is v
 
 
 @pytest.mark.anyio
@@ -329,14 +332,14 @@ async def test_telnet_server_negotiation_fail(server):
             assert b == b'\xff\xfd\x18'
             await _waiter.wait()
 
-    assert repr(srv.last) == "<TimeoutServer: remote: !+TTYPE extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
+    assert repr(srv.last) == "<TimeoutServer: opt: TTYPE:24:?/! extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
 
 @pytest.mark.anyio
 async def test_telnet_client_negotiation_fail(bind_host, unused_tcp_port):
     """Test asynctelnet.TelnetCLient() negotiation failure with server."""
     from asynctelnet.telopt import TTYPE
 
-    class TimeoutClient(TelnetClient):
+    class TimeoutClient(Client):
         async def setup(self):
             with pytest.raises(TimeoutError):
                 await super().setup(has_tterm=0.1)
@@ -357,7 +360,7 @@ async def test_telnet_client_negotiation_fail(bind_host, unused_tcp_port):
         async with open_connection(client_factory=TimeoutClient, host=bind_host, port=unused_tcp_port) as client:
             tg.cancel_scope.cancel()
 
-    assert repr(client) == "<TimeoutClient: local: !+TTYPE extra: charset='UTF-8' lang='C.UTF-8' cols=80 rows=25 term='unknown' tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
+    assert repr(client) == "<TimeoutClient: opt: TTYPE:24:!/? extra: charset='UTF-8' lang='C.UTF-8' cols=80 rows=25 term='unknown' tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
 
 @pytest.mark.anyio
 async def test_telnet_server_as_module():

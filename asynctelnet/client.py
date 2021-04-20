@@ -84,7 +84,7 @@ class TelnetClient(BaseClient):
                 tg.start_soon(self.local_option, NAWS, True)
                 tg.start_soon(self.local_option, BINARY, True)
                 if self.extra.charset:
-                    await self._request_charset()
+                    await self.opt.CHARSET.send_request()
                 else:
                     tg.start_soon(self.remote_option, CHARSET, True)
         # 

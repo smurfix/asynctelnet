@@ -63,11 +63,7 @@ class _Option(int):
     """
     Internal class to hold options.
     """
-    def __new__(cls, name, value,*x):
-        if x:
-            import pdb;pdb.set_trace()
-        if not isinstance(value,int):
-            import pdb;pdb.set_trace()
+    def __new__(cls, name, value, *x):
         obj = int.__new__(cls, value)
         obj.value = value
         obj.name = name
@@ -218,7 +214,7 @@ class BaseOption(metaclass=_reg):
     @property
     def has_local(self):
         if self.loc.broken:
-            raise RuntimeError("local option: broken")
+            raise TimeoutError("local option: broken")
         if self.loc.waiting:
             raise RuntimeError("local option: waiting")
         return self.loc.state
@@ -226,7 +222,7 @@ class BaseOption(metaclass=_reg):
     @property
     def has_remote(self):
         if self.rem.broken:
-            raise RuntimeError("remote option: broken")
+            raise TimeoutError("remote option: broken")
         if self.rem.waiting:
             raise RuntimeError("remote option: waiting")
         return self.rem.state
@@ -352,12 +348,21 @@ class HalfOption:
         self._local = local
 
     def __repr__(self):
-        s = "?" if self.state is None else "+" if self.state else "-"
+        s = "!" if self.broken else "?" if self.state is None else "+" if self.state else "-"
         if self.waiting:
             s += "w"
-        if self.broken:
-            s = "/"+s
         return s
+
+    @property
+    def idle(self):
+        """
+        Flag whether this option has ever done anything
+        """
+        if self.state is not None:
+            return False
+        if self.waiting or self.broken:
+            return False
+        return True
 
     def reset(self):
         self.state = None
@@ -516,7 +521,7 @@ class HalfOption:
         """
         await (self.send_yes if state else self.send_no)(force=force)
         try:
-            return await self.get_state()
+            res = await self.get_state()
         except BaseException:
             self.broken = True
             if self.waiting:
@@ -525,8 +530,9 @@ class HalfOption:
             raise
         else:
             self.broken = False
+            return res
 
-    async def get_state(self):
+    async def get_state(self) -> bool:
         """
         Returns the current state.
 
@@ -538,6 +544,7 @@ class HalfOption:
             raise RuntimeError("State exchange failed")
         if not isinstance(self.state,bool):
             raise RuntimeError("State is not set")
+        return self.state
 
 
 

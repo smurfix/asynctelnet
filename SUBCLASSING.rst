@@ -144,6 +144,12 @@ the option. The default implementation of all four returns ``False``.
 Specific Options
 ================
 
+binary
+++++++
+
+Acknowledged by default.
+
+TODO: auto-set on setup.
 
 charset
 +++++++
@@ -176,20 +182,23 @@ message.
 ttype
 +++++
 
-RFC 1091.
+RFC 1091. The server repeatedly sends a ``SEND`` message. The client
+replies with a supported terminal type. The end of the list is signalled by
+the client repeating its last message.
 
-AsyncTelnet implements ``handle_will_ttype`` and ``handle_do_ttype``.
+The default implementation's client only supports one terminal type.
 
-handle_send_ttype
------------------
+The default implementation's server requests all supported client terminal
+types. it sets ``extra.TERM`` to the most-recent type, ``extra.term_done``
+to ``True`` when finished, and ``extra.ttype1`` ff. to the terminal types
+received.
 
-Called without arguments when the remote requests a terminal type.
-An attribute check is used to determine whether to send WILL. Implemented
-in `TelnetClient`.
+Client
+------
 
-handle_recv_ttype
------------------
+``self.extra.term`` holds the terminal type to transmit when the server 
 
-Called with the incoming terminal type when the remote sends it.
-An attribute check is used to determine whether to send DO. Implemented in
-`TelnetServer`.
+Server
+------
+
+``handle_recv`` method implements the above algorithm.

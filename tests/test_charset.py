@@ -132,8 +132,7 @@ async def test_telnet_client_no_charset(server):
             return val
 
     async with server(factory=ServerTestCharset,encoding="") as srv, \
-        srv.client(factory=ClientTestCharset, encoding='latin1'# connect_minwait=0.05
-                ):
+        srv.client(factory=ClientTestCharset, encoding='latin1'):
 
         # charset remains latin1
         with anyio.fail_after(2):
