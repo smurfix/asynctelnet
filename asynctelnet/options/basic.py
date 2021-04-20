@@ -134,7 +134,7 @@ class CHARSET(BaseOption):
         Send a CHARSET
         """
         s = self.stream
-        if not self.loc.send_yes():
+        if not await self.loc.send_yes():
             return False
         if not s._charset_lock:
             await self.send_sb()
