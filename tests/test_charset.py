@@ -29,14 +29,12 @@ async def test_telnet_server_on_charset(server):
         def on_charset(self, charset):
             super().on_charset(charset)
             assert self.extra_attributes['charset']() == given_charset
-            self.log.error("ONCHAR S")
             _waiter.set()
 
     class ClientTestCharset(asynctelnet.TelnetClient):
         def on_charset(self, charset):
             super().on_charset(charset)
             assert self.extra_attributes['charset']() == given_charset
-            self.log.error("ONCHAR C")
             _waiter2.set()
 
     # term=None stops autonegotiation
