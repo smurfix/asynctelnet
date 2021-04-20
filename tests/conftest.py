@@ -9,10 +9,6 @@ from asynctelnet.server import server_loop
 from asynctelnet.client import open_connection
 from functools import partial
 
-@pytest.fixture
-def anyio_backend():
-    return  "trio"
-
 @pytest.fixture(scope="module", params=['127.0.0.1'])
 def bind_host(request):
     """ Localhost bind address. """
