@@ -7,7 +7,7 @@ import outcome
 import anyio
 
 __all__ = ('encoding_from_lang', 'name_unicode', 'eightbits', 'make_logger',
-           'repr_mapping', 'function_lookup', 'CtxObj', 'spawn', 'ValueEvent',
+           'repr_mapping', 'function_lookup', 'CtxObj', 'ValueEvent',
            'AttrDict', 'hybridmethod')
 
 
@@ -122,19 +122,6 @@ class CtxObj:
                 await self.aclose()
         return await ctx.__aexit__(*tb)
 
-
-async def spawn(tg, proc, *args, _name=None, **kwargs):
-    """
-    Helper to start a subtask. Like `anyio.abc.TaskGroup.start_soon` but
-    (a) accepts keyword arguments, (b) returns an `anyio.abc.CancelScope`
-    which can be used to kill the task.
-    """
-    async def _spawn(p,a,k, *, task_status):
-        with anyio.CancelScope() as sc:
-            task_status.started(sc)
-            await p(*a,**k)
-
-    return await tg.start(_spawn, proc,args,kwargs, name=_name)
 
 class ValueEvent:
     """A waitable value useful for inter-task synchronization,
