@@ -14,6 +14,11 @@ class _NHT:
     async def setup(self, has_tterm):
         await super().setup()
 
+class ServerTestTtype(NoTtype, _NHT, Server):
+    pass
+class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
+    pass
+
 @pytest.mark.anyio
 async def test_telnet_server_on_ttype(server):
     """Test Server's callback method handle_recv()."""
@@ -27,13 +32,8 @@ async def test_telnet_server_on_ttype(server):
             if s.extra.term_done:
                 _waiter.set()
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise
         await client.send_iac(WILL, TTYPE.value)
@@ -76,13 +76,8 @@ async def test_telnet_server_on_ttype_beyond_max(server):
             if ttype == given_ttypes[-1]:
                 _waiter.set()
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE.value)
@@ -120,13 +115,8 @@ async def test_telnet_server_on_ttype_empty(server):
             if ttype == given_ttypes[-1]:
                 _waiter.set()
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE.value)
@@ -159,13 +149,8 @@ async def test_telnet_server_on_ttype_looped(server):
                 _waiter.set()
             self.count += 1
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE.value)
@@ -199,13 +184,8 @@ async def test_telnet_server_on_ttype_repeated(server):
                 _waiter.set()
             self.count += 1
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE.value)
@@ -240,13 +220,8 @@ async def test_telnet_server_on_ttype_mud(server):
                 _waiter.set()
             self.count += 1
 
-    class ServerTestTtype(NoTtype, _NHT, Server):
-        test_opt = OptTtype
-    class ClientTestTtype(NoTtype, _NHT, BaseTestClient):
-        test_opt = ignore_option(TTYPE)
-
-    async with server(factory=ServerTestTtype, encoding=None) as srv, \
-            srv.client(factory=ClientTestTtype, encoding=None) as client:
+    async with server(factory=ServerTestTtype, encoding=None, test_opt = OptTtype) as srv, \
+            srv.client(factory=ClientTestTtype, encoding=None, test_opt = ignore_option(TTYPE)) as client:
 
         # exercise,
         await client.send_iac(WILL, TTYPE.value)

@@ -9,6 +9,9 @@ from asynctelnet.options import BaseOption, HalfOption, Forced
 
 class Test_Opt:
     test_opt = None
+    def __init__(self, *a, test_opt=None, **kw):
+        self.test_opt = test_opt
+        super().__init__(*a, **kw)
 
     async def setup(self, **kw):
         if self.test_opt is not None:

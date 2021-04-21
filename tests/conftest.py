@@ -35,7 +35,7 @@ def server(bind_host, unused_tcp_port):
             await shell(client)
 
         @asynccontextmanager
-        async def gen_client(*, factory=Client, with_reader=True, **kw):
+        async def gen_client(*, factory=Client, with_reader=True, test_opt=None, **kw):
             if "host" not in kw:
                 kw["host"] = bind_host
             if "port" not in kw:
@@ -44,6 +44,8 @@ def server(bind_host, unused_tcp_port):
                 kw["encoding"] = ""
             if "term" not in kw:
                 kw["term"] = None
+            if test_opt is not None:
+                factory = partial(factory, test_opt=test_opt)
             async with open_connection(client_factory=factory, **kw) as client:
                 if with_reader:
                     res.tg.start_soon(shell_, client)
