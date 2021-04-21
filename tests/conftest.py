@@ -68,7 +68,7 @@ def unused_tcp_port():
     return _unused_tcp_port()
 
 @pytest.fixture(params=[
-    pytest.param(('asyncio', {}), id='asyncio'),
+    #pytest.param(('asyncio', {}), id='asyncio'),
     pytest.param(('trio', {}), id='trio'),
 ])
 def anyio_backend(request):

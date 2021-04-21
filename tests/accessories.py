@@ -13,14 +13,14 @@ class Test_Opt:
         self.test_opt = test_opt
         super().__init__(*a, **kw)
 
-    async def setup(self, **kw):
+    async def setup(self, tg, **kw):
         if self.test_opt is not None:
             if isinstance(self.test_opt,(list,tuple)):
                 for opt in self.test_opt:
                     self.opt.add(opt)
             else:
                 self.opt.add(self.test_opt)
-        await super().setup(**kw)
+        await super().setup(tg, **kw)
 
     def _unref(self):
         # don't clean up, tests need the data
@@ -32,12 +32,12 @@ class Server(Test_Opt, TelnetServer):
 class BaseTestServer(Test_Opt, BaseServer):
     pass
 
-async def shell(client):
-    client.log.debug("R start")
+async def shell(stream):
+    stream.log.debug("R start")
     try:
         while True:
-            d = await client.receive()
-            client.log.debug("R:%s",d)
+            d = await stream.receive()
+            stream.log.debug("R:%r",d)
     except anyio.EndOfStream:
         pass
 
@@ -45,8 +45,8 @@ class NoTtype:
     """
     Mix-in
     """
-    async def setup(self):
-        await super().setup(has_tterm=False)
+    async def setup(self, tg):
+        await super().setup(tg, has_tterm=False)
         self.extra.ttype = "whatever"
 
 def ignore_option(value_):

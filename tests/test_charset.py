@@ -22,9 +22,9 @@ async def test_telnet_server_on_charset(server):
     given_charset = 'KOI8-U'
 
     class ServerTestCharset(Server):
-        async def setup(self):
-            await super().setup()
-            await self.local_option(CHARSET,True)
+        async def setup(self, tg):
+            await super().setup(tg)
+            tg.start_soon(self.local_option,CHARSET,True)
 
         def on_charset(self, charset):
             super().on_charset(charset)
@@ -54,9 +54,9 @@ async def test_telnet_client_on_charset(server):
     given_charset = 'KOI8-U'
 
     class ServerTestCharset(Server):
-        async def setup(self):
-            await super().setup()
-            await self.remote_option(CHARSET,True)
+        async def setup(self, tg):
+            await super().setup(tg)
+            tg.start_soon(self.remote_option,CHARSET,True)
 
         def on_charset(self, charset):
             super().on_charset(charset)
@@ -85,9 +85,9 @@ async def test_telnet_client_select_charset(server):
     _waiter = anyio.Event()
 
     class ServerTestCharset(Server):
-        async def setup(self):
-            await super().setup()
-            await self.local_option(CHARSET,True)
+        async def setup(self, tg):
+            await super().setup(tg)
+            tg.start_soon(self.local_option,CHARSET,True)
 
         def get_supported_charsets(self):
             return ['illegal', 'cp437']
@@ -114,9 +114,9 @@ async def test_telnet_client_no_charset(server):
     _waiter = anyio.Event()
 
     class ServerTestCharset(asynctelnet.TelnetServer):
-        async def setup(self):
-            await super().setup()
-            await self.local_option(CHARSET,True)
+        async def setup(self, tg):
+            await super().setup(tg)
+            tg.start_soon(self.local_option,CHARSET,True)
 
         def get_supported_charsets(self):
             return ['illegal', 'this-is-no-good-either']

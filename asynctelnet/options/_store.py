@@ -2,15 +2,8 @@ from __future__ import annotations
 from weakref import ref
 from typing import Union
 
-from ._base import Opt, BaseOption, _Option
-
-def _make_opt(value_):
-    value_ = getattr(value_,"value",value_)
-    class _Opt(BaseOption):
-        value = value_
-        name = f"X_{value}"
-    Opt.register(_Opt)
-    return _Opt
+from ._base import BaseOption
+from ..telopt import Opt
 
 class StreamOptions(dict):
     """
@@ -38,9 +31,10 @@ class StreamOptions(dict):
                 try:
                     opt = Opt(value)
                 except KeyError:
-                    opt = _make_opt(value)
+                    opt = Opt.add(value,name)
             else:
                 raise
+
         try:
             return self[opt.value]
         except KeyError:
@@ -49,7 +43,6 @@ class StreamOptions(dict):
 
     def __getitem__(self, value: int):
         """Look up by option / value."""
-        value = getattr(value,'value',value)
         try:
             return super().__getitem__(value)
         except KeyError:
@@ -58,7 +51,7 @@ class StreamOptions(dict):
             except KeyError:
                 # Ugh, we don't even know this option.
                 # Instantiate a subclass for it.
-                opt = _make_opt(value)
+                opt = Opt.add(value, f"X_{value :d}")
             self[opt.value] = iopt = BaseOption(self._stream(), value=opt)
             return iopt
 
@@ -75,8 +68,8 @@ class StreamOptions(dict):
             self.stream.log.debug("A handler for %s already exists", opt)
             return
 
-        if isinstance(opt, _Option):
+        if isinstance(opt, Opt):
             opt = BaseOption(value=opt)
-        if isinstance(opt,type) and issubclass(opt,BaseOption):
+        elif isinstance(opt,type) and issubclass(opt,BaseOption):
             opt = opt(self.stream)
         self[opt.value] = opt

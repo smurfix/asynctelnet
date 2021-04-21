@@ -8,8 +8,9 @@ from enum import IntEnum
 from weakref import ref, ReferenceType
 import anyio
 from typing import Optional
+from .. import stream
 
-from ..telopt import Cmd, WILL,WONT,DO,DONT,SB
+from ..telopt import Cmd, WILL,WONT,DO,DONT,SB, Opt
 
 
 class Forced(IntEnum):
@@ -17,99 +18,25 @@ class Forced(IntEnum):
     yes = 1
     repeat = 2
 
-class _OptRegBase:
-    def __init__(self):
-        self.name2opt = {}
-        self.value2opt = {}
 
-    def __call__(self, num):
-        num = getattr(num,"value",num)
-        return self.value2opt[num]
+class _BaseSpecializer(type):
+    # This metaclass creates a value-specialized BaseOption (or any subclass)
+    # by attributing it with the option name.
 
-    def __getitem__(self, name):
-        return self.name2opt[name]
-
-    def __getattr__(self, name):
+    def __getattr__(cls, key):
         try:
-            return self.name2opt[name]
+            value_ = Opt[key]
         except KeyError:
-            raise AttributeError(name) from None
-
-    @property
-    def options(self):
-        return self.value2opt.values()
-
-    def register(self, opt):
-        if opt.name in self.name2opt:
-            raise RuntimeError(f"Option {opt.name} already exists")
-        if opt.value in self.value2opt:
-            raise RuntimeError(f"Option {opt.value} already exists")
-        self.value2opt[opt.value] = opt
-        self.name2opt[opt.name] = opt
-        return opt
-
-class _OptRegHandler(_OptRegBase):
-    """
-    Registration for option handlers
-
-    Lookup by name is via attribute or indexing, lookup by value via function call.
-    """
-    def register(self, opt):
-        if not isinstance(opt, type) or not issubclass(opt, BaseOption):
-            raise RuntimeError("You register option classes")
-        super().register(opt)
-
-class _Option(int):
-    """
-    Internal class to hold options.
-    """
-    def __new__(cls, name, value, *x):
-        obj = int.__new__(cls, value)
-        obj.value = value
-        obj.name = name
-        return obj
-
-    def __repr__(self):
-        return f"{self.name}:{self.value}"
-
-
-class _OptRegName(_OptRegBase):
-    """
-    Registration for option names/values
-
-    Lookup by name is via indexing, lookup by value via function call.
-    """
-    def register(self, value, name):
-        opt = _Option(value=value, name=name)
-        super().register(opt)
-        return opt
-        
-# registry for options
-Opt = _OptRegName()
-
-# registries for option handlers
-OptH = _OptRegHandler()
-
-class _reg(type):
-    """
-    Metaclass that registers an option name and a corresponding default handler.
-    """
-    def __new__(metacls, name, bases, classdict, **kwds):
-        cls = super().__new__(metacls, name, bases, classdict, **kwds)
+            raise AttributeError(key)
         if cls.value is not None:
-            if cls.name is None:
-                cls.name = name
-            try:
-                Opt(cls.value)
-            except KeyError:
-                Opt.register(cls.value, cls.name)
-            try:
-                OptH(cls.value)
-            except KeyError:
-                OptH.register(cls)
-        return cls
+            raise RuntimeError("you cannot re-specialize an option")
 
-class BaseOption(metaclass=_reg):
+        class cls_(cls):
+            value = value_
+        cls_.__name__ = f"{cls.__name__}.{key}"
+        return cls_
+
+class BaseOption(metaclass=_BaseSpecializer):
     """
     Handle some option.
     """
@@ -122,9 +49,12 @@ class BaseOption(metaclass=_reg):
         if self.value is None:
             if value is None:
                 raise RuntimeError("You need to set the option value")
-            self.value = getattr(value,'value',value)
+            self.value = Opt(value)
+            self.name = self.value.name
         elif value is not None:
             raise RuntimeError("You cannot override the option value")
+        elif not isinstance(self.value,Opt):
+            raise RuntimeError(f"Use 'value=Opt(num)', not {self.value}")
         self._setup_half()
 
     def _setup_half(self):
@@ -132,8 +62,14 @@ class BaseOption(metaclass=_reg):
         self.loc = HalfOption(self, True)
         self.rem = HalfOption(self, False)
 
+    async def setup(self, tg):
+        """
+        Setup. *Must* add to this taskgroup instead of blocking.
+        """
+        pass
+
     def __repr__(self):
-        return "%s:%s:%r/%r" % (self.__class__.__name__,Opt(self.value).value, self.loc, self.rem)
+        return "%s:%r/%r" % (self.__class__.__name__, self.loc, self.rem)
     __str__=__repr__
 
 
@@ -311,6 +247,18 @@ class BaseOption(metaclass=_reg):
         pass
 
 
+    async def process_will(self) -> None:
+        await self.rem.process_yes()
+
+    async def process_wont(self) -> None:
+        await self.rem.process_no()
+
+    async def process_do(self) -> None:
+        await self.loc.process_yes()
+
+    async def process_dont(self) -> None:
+        await self.loc.process_no()
+
     async def process_sb(self, data: bytes) -> None:
         """
         Incoming subnegotiation message.
@@ -319,9 +267,25 @@ class BaseOption(metaclass=_reg):
         """
         s = self._stream()
         s.log.warning("Subneg for %s not implemented: %r", self.value, data)
-        s.start_soon(self.send_dont, Forced.yes)
-        s.start_soon(self.send_wont, Forced.yes)
+        self.disable()
 
+    def teardown(self):
+        self.loc.teardown()
+        self.rem.teardown()
+
+    @property
+    def idle(self):
+        """
+        Flag whether this option has ever done anything
+        """
+        return self.loc.idle and self.rem.idle
+
+    async def disable(self):
+        """
+        Call if the option is broken.
+        """
+        await self.loc.disable()
+        await self.rem.disable()
 
 class HalfOption:
     """
@@ -352,6 +316,12 @@ class HalfOption:
         if self.waiting:
             s += "w"
         return s
+
+    def teardown(self):
+        if self.waiting:
+            self.broken = True
+            self.waiting.set()
+            self.waiting = None
 
     @property
     def idle(self):
@@ -429,7 +399,7 @@ class HalfOption:
             await self.waiting.wait()
         if self.state is True and force < Forced.repeat:
             return
-        if self.state is not None and force < Forced.yes:
+        if (self.broken or self.state is not None) and force < Forced.yes:
             return
 
         if not self.broken:
@@ -445,7 +415,7 @@ class HalfOption:
             await self.waiting.wait()
         if self.state is False and force < Forced.repeat:
             return
-        if self.state is not None and force < Forced.yes:
+        if (self.broken or self.state is not None) and force < Forced.yes:
             return
 
         if not self.broken:
@@ -461,26 +431,24 @@ class HalfOption:
         opt = self._opt()
 
         if self.waiting:  # message was solicited
-            try:
-                res = await self.reply_yes()
-                if self.state is not False:
-                    if res is not False:
-                        self.state = True
-                        return None
-                    self.state = False
-                # state is False: we need to reject
+            self.waiting.set()
+            self.waiting = None
+
+            if self.state is False:
+                # state is now False: we need to reject
+                await opt._send(WONT if self._local else DONT)
+            else:
+                self.state = True
+                self.broken = False
+                await self.reply_yes()
+        else:
+            # Message was not solicited: send reply if changing state
+            if self.broken:
+                # unsolicited message in broken state. Reject.
                 await opt._send(WONT if self._local else DONT)
                 return
-            except BaseException:
-                with anyio.move_on_after(2, shield=True):
-                    await opt._send(WONT if self._local else DONT)
-                raise
-            finally:
-                self.waiting.set()
-                self.waiting = None
-
-        # Message was not solicited: send reply if changing state
-        if self.state is not True:
+            if self.state is True:
+                return
             res = await self.handle_yes()
             if res is False:
                 self.state = False
@@ -498,14 +466,19 @@ class HalfOption:
         opt = self._opt()
 
         if self.waiting:  # message was solicited
-            await self.reply_no()
             self.state = False
+            self.broken = False
             self.waiting.set()
             self.waiting = None
+            await self.reply_no()
             return
 
         # Message was not solicited: send reply if changing state
-        if self.state is not False:
+        else:
+            if self.broken:
+                return
+            if self.state is False:
+                return
             self.state = False
             await self.handle_no()
             await opt._send(WONT if self._local else DONT)
@@ -539,12 +512,31 @@ class HalfOption:
         Raises an error if the last `set_state` has been interrupted.
         """
         if self.waiting:
+            opt = self._opt()
+            s = opt.stream
+            s.log.debug("WAIT %r",opt)
             await self.waiting.wait()
+            s.log.debug("WAIT DONE %r",opt)
         if self.broken:
-            raise RuntimeError("State exchange failed")
+            opt = self._opt()
+            raise RuntimeError("State exchange failed: %r" % (opt,))
         if not isinstance(self.state,bool):
-            raise RuntimeError("State is not set")
+            opt = self._opt()
+            raise RuntimeError("State is not set: %r" % (opt,))
         return self.state
+
+    async def disable(self):
+        """
+        Disable this option.
+
+        May not return to working state from the remote side.
+        """
+        self.broken = True
+        if self.waiting:
+            self.waiting.set()
+            self.waiting = None
+        opt = self._opt()
+        await opt._send(WONT if self._local else DONT)
 
 
 

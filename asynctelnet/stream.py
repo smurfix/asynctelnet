@@ -25,9 +25,9 @@ from .telopt import (Cmd, Opt,
                      SUSP, TM, TSPEED, TTABLE_ACK, TTABLE_NAK, TTABLE_IS,
                      TTABLE_REJECTED, TTYPE, USERVAR, VALUE, VAR, WILL, WONT,
                      XDISPLOC, name_command, name_commands, SubVar, Req)
-from .options import StreamOptions, Forced
+from .options import StreamOptions, Forced, fullBINARY
 
-from .accessories import CtxObj, spawn, ValueEvent, AttrDict
+from .accessories import CtxObj, ValueEvent, AttrDict
 
 # list of IAC commands needing 3+ bytes
 _iac_multibyte = {DO, DONT, WILL, WONT, SB}
@@ -325,7 +325,10 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
             try:
                 self.log.debug("Start setup")
-                await self.setup()
+                if self.force_binary:
+                    self.opt.add(fullBINARY)
+                async with anyio.create_task_group() as tg:
+                    await self.setup(tg)
                 self.log.debug("Finished setup")
                 yield self
             finally:
@@ -337,6 +340,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                 self.log.debug("%s teardown", "Interrupted" if died else "Finished")
                 tg.cancel_scope.cancel()
                 self._unref()
+            pass # waiting for tg to end
 
     def _unref(self):
         del self.extra
@@ -347,14 +351,16 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             await p(*a,**k)
         self._tg.start_soon(_work,p,a,k)
 
-    async def setup(self):
+    async def setup(self, tg):
         """
         Called when starting this connection.
         """
         if self.force_binary:
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(self.opt.BINARY.send_will)
-                tg.start_soon(self.opt.BINARY.send_do)
+            tg.start_soon(self.opt.BINARY.send_will)
+            tg.start_soon(self.opt.BINARY.send_do)
+
+        for opt in self.opt.values():
+            await opt.setup(tg)
 
     async def teardown(self):
         """
@@ -364,6 +370,8 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         for sb_w in list(self._subneg_recv.values()):
             await sb_w.aclose()
+        for opt in self.opt.values():
+            opt.teardown()
 
     # receiver
 
@@ -449,12 +457,20 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
 
         Mainly used for testing.
         """
-        buf = bytearray()
-        while len(buf) < n_bytes:
-            chunk = await self._receive(n_bytes - len(buf))
+        buf = None
+        while buf is None or len(buf) < n_bytes:
+            chunk = await self._receive(n_bytes - (0 if buf is None else len(buf)))
             if not isinstance(chunk, (bytes,bytearray)):
+                if isinstance(chunk,SetCharset):
+                    continue
                 return chunk
-            buf += chunk
+
+            if self._decoder is not None:
+                chunk = self._decoder.decode(chunk)
+            if buf is None:
+                buf = chunk
+            else:
+                buf += chunk
         return buf
 
 
@@ -612,7 +628,7 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
             else:
                 async with self._write_lock:
                     await self._stream.send(buf)
-        except anyio.ClosedResourceError:
+        except (anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError):
             pass
 
     @staticmethod
@@ -740,20 +756,15 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         opt = self.opt[opt]
 
-        # neg: negative message corresponding to "opt"
-        # .... used to select the handler when ack is not possible
-        # opts: dict with the option's state
-        # reply: (reject,accept) command for replies
-        # want: does the remote want a positive or a negative reply?
-        self.log.debug("R: IAC %s %s", cmd.name, opt.name)
+        self.log.debug("R: IAC %s %s", cmd.name, opt.__class__.__name__)
         if cmd == DO:
-            await opt.loc.process_yes()
+            await opt.process_do()
         elif cmd == DONT:
-            await opt.loc.process_no()
+            await opt.process_dont()
         elif cmd == WILL:
-            await opt.rem.process_yes()
+            await opt.process_will()
         elif cmd == WONT:
-            await opt.rem.process_no()
+            await opt.process_wont()
         else:
             raise RuntimeError("? received %r" % cmd)
 
@@ -871,12 +882,14 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
         """
         buf = self._escape_iac(b''.join(bytes([b]) if isinstance(b,int) else b
             for b in bufs))
-        if len(bufs) == 1:
-            self.log.debug("S: IAC %s",Cmd(bufs[0]).name)
-        elif len(bufs) == 2:
-            self.log.debug("S: IAC %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name)
+        if buf[0] in (WILL,WONT,DO,DONT,SB):
+            optname = self.opt[buf[1]].__class__.__name__
         else:
-            self.log.debug("S: IAC %s %s %s",Cmd(bufs[0]).name,Opt(bufs[1]).name,bufs[2:])
+            optname = ""
+        if len(bufs) < 3:
+            self.log.debug("S: IAC %s %s",Cmd(bufs[0]).name, optname)
+        else:
+            self.log.debug("S: IAC %s %s %s",Cmd(bufs[0]).name, optname, bufs[2:])
 
         assert isinstance(buf, (bytes, bytearray)), buf
         assert buf and len(buf), buf
@@ -1067,42 +1080,6 @@ class BaseTelnetStream(CtxObj, anyio.abc.ByteSendStream):
                     932, 949, 950, 1006, 1026, 1140, 1250, 1251, 1252,
                     1253, 1254, 1255, 1257, 1257, 1258, 1361,
                 )]
-
-    def select_charset(self, offers):
-        """
-        Select a charset from those offered by the other side.
-        Default: use the one corresponding to the current locale.
-                 If that isn't in the list, use the first for which we have
-                 an incremental decoder.
-        """
-
-        # Local charset set? use that.
-        if self._charset:
-            loc = self._charset.lower()
-            for c in offers:
-                if c.lower() == loc:
-                    return c
-
-        # Local charset set? use that.
-        import locale
-        loc = locale.getpreferredencoding()
-        if loc:
-            loc = loc.lower()
-            for c in offers:
-                if c.lower() == loc:
-                    return c
-
-        # Otherwise use the first we can find in their list that works.
-        for c in offers:
-            try:
-                codecs.getincrementaldecoder(c)
-            except LookupError:
-                continue
-            else:
-                self.log.info("Charsets: charset %s not offered, using %s", loc, c)
-                return c
-        self.log.warning("Charsets: no idea what to do with %r", offers)
-        return None
 
     def _set_charset_decoder(self, codec):
         if codec or codec is None:
@@ -1341,52 +1318,6 @@ class TelnetStream(BaseTelnetStream):
             return False
         self.log.debug('send IAC SB TSPEED SEND IAC SE')
         await self.send_subnet(TSPEED, SEND)
-        return True
-
-    async def request_new_environ(self):
-        """
-        Ask the remote side for the envvars returned by `get_request_envvars` and `get_request_uservars`.
-
-        Returns True if request is valid for telnet state, and was sent.
-        """
-
-    request_environ = request_new_environ
-
-    async def handle_will_new_environ(self):
-        """
-        Request sub-negotiation NEW_ENVIRON, :rfc:`1572`.
-
-        Returns True if request is valid for telnet state, and was sent.
-        """
-        if not self.server:
-            self.log.error('NEW_ENVIRON DO may only be sent by server')
-            return False
-
-        if not self._remote_option.enabled(NEW_ENVIRON):
-            self.log.debug('cannot send SB NEW_ENVIRON SEND IS '
-                           'without receipt of WILL NEW_ENVIRON')
-            return False
-
-        request_list = await self._ext_send_callback[NEW_ENVIRON]()
-
-        if not request_list:
-            self.log.debug('request_environ: server protocol makes no demand, '
-                           'no request will be made.')
-            return False
-
-        response = bytearray([SEND])
-
-        for env_key in request_list:
-            if env_key in (VAR, USERVAR):
-                # VAR followed by IAC,SE indicates "send all the variables",
-                # whereas USERVAR indicates "send all the user variables".
-                # In today's era, there is little distinction between them.
-                response.append(env_key)
-            else:
-                response.extend([VAR])
-                response.extend([_escape_environ(env_key.encode('ascii'))])
-        self.log.debug('request_environ: {!r}'.format(b''.join(response)))
-        await self.send_subneg(NEW_ENVIRON, *response)
         return True
 
     async def handle_will_xdisploc(self):
@@ -1757,42 +1688,6 @@ class TelnetStream(BaseTelnetStream):
             xdisploc_str = (await self._ext_send_callback[XDISPLOC]()).encode('ascii')
             self.log.debug('send IAC SB XDISPLOC IS %r IAC SE', xdisploc_str)
             await self.send_subneg(XDISPLOC,IS+xdisploc_str)
-
-    async def handle_subneg_new_environ(self, buf):
-        """
-        Callback handles (IAC, SB, NEW_ENVIRON, <buf>, SE), :rfc:`1572`.
-
-        For requests beginning with IS, or subsequent requests beginning
-        with INFO, any callback registered by :meth:`set_ext_callback` of
-        cmd NEW_ENVIRON is passed a dictionary of (key, value) replied-to
-        by client.
-
-        For requests beginning with SEND, the callback registered by
-        ``set_ext_send_callback`` is provided with a list of keys
-        requested from the server; or None if only VAR and/or USERVAR
-        is requested, indicating to "send them all".
-        """
-        opt,buf = buf[0],buf[1:]
-        opt_kind = SubT(opt).name
-        self.log.debug('recv SB Env %s: %r', opt_kind, buf)
-
-        env = _decode_env_buf(buf)
-
-        if opt in (IS, INFO):
-            assert self.server, ('SE: cannot recv from server: {} {}'
-                                 .format(name_command(NEW_ENVIRON), opt_kind,))
-            if env:
-                await self._ext_callback[cmd](env)
-
-        elif opt == SEND:
-            assert self.client, ('SE: cannot recv from client: {} {}'
-                                 .format(name_command(cmd), opt_kind))
-            # client-side, we do _not_ honor the 'send all VAR' or 'send all
-            # USERVAR' requests -- it is a small bit of a security issue.
-            send_env = _encode_env_buf(
-                await self._ext_send_callback[NEW_ENVIRON](env.keys()))
-            self.log.debug('env send: {!r}'.format(response))
-            await self.send_subneg(NEW_ENVIRON, IS, send_env)
 
     async def handle_subneg_sndloc(self, buf):
         """Fire callback for IAC-SB-SNDLOC-<buf>-SE (:rfc:`779`)."""
@@ -2292,101 +2187,3 @@ class TelnetStream(BaseTelnetStream):
 
 
 
-bVAR = bytes([VAR])
-bUSERVAR = bytes([USERVAR])
-bVALUE = bytes([VALUE])
-bESC = bytes([ESC])
-
-EnvTagList = Iterator[Tuple[SubVar,bytes]]
-
-def _escape_environ(seq: EnvTagList) -> bytes:
-    """
-    Return a buffer for this sequence of tagged values.
-
-    :param bytes buf: a sequence of (SubVar,bytes) tuples
-    :returns: bytes buffer
-    :rtype: bytes
-    """
-    buf = bytearray()
-    for t,s in seq:
-        buf.append(t)
-        for b in s:
-            if b < 4:
-                buf.append(SubVar.ESC)
-            buf.append(b)
-    return buf
-
-
-def _unescape_environ(buf: bytes) -> EnvTagList:
-    """
-    Return a (SubVar,bytes) tuple iterator sourcing this sequence.
-
-    :param bytes buf: given bytes buffer
-    :returns: bytes buffer with escape characters removed.
-    :rtype: bytes
-    """
-    bi = iter(buf)
-    try:
-        typ = next(bi)
-    except StopIteration:
-        return
-    while True:
-        buf = bytearray()
-        while True:
-            try:
-                c = next(bi)
-                if c == SubVar.ESC:
-                    c = next(bi)
-                elif c < 4:
-                    break
-                buf.append(c)
-            except StopIteration:
-                yield (typ,buf.decode("utf-8"))
-                return
-        yield (typ,buf.decode("utf-8"))
-        typ = c
-
-def _encode_env_buf(bnv: Mapping[str,str]) -> bytes:
-    """
-    bncode dictionary for transmission as bnvironment variables, :rfc:`1572`.
-
-    :param bytes buf: dictionary of bnvironment values.
-    :returns: bytes buffer meant to follow sequence IAC SB NEW_ENVIRON IS.
-        It is not terminated by IAC SE.
-    :rtype: bytes
-
-    Returns bytes array ``buf`` for use in sequence (IAC, SB,
-    NEW_ENVIRON, IS, <buf>, IAC, SE) as set forth in :rfc:`1572`.
-    """
-    def _make_seq(bnv):
-        for k,v in bnv.items():
-            yield SubVar.VAR,v.bncode("ascii")
-            yield SubVar.VALUE,v.bncode("utf-8")
-
-    return _escape_environ(_make_seq())
-
-
-def _decode_env_buf(buf):
-    """
-    Decode bnvironment values to dictionary, :rfc:`1572`.
-
-    :param bytes buf: bytes array following sequence IAC SB NEW_ENVIRON
-        SEND or IS up to IAC SE.
-    :returns: dictionary representing the bnvironment values decoded from buf.
-    :rtype: dict
-
-    This implementation does not distinguish between ``USERVAR`` and ``VAR``.
-    """
-    bnv = {}
-    k = None
-    for t,v in _unescape_environ(buf):
-        if t == SubVar.VAR or t == SubVar.USERVAR:
-            if k is not None:
-                bnv[k] = None
-            k = v
-        elif t == SubVar.VALUE:
-            if k is None:
-                raise ValueError("value without key in %r", buf)
-            bnv[k] = v
-            k = None
-    return bnv

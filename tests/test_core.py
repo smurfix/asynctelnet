@@ -31,13 +31,13 @@ async def test_open_connection(bind_host, server):
     evt = anyio.Event()
     async def server_shell(stream):
         evt.set()
-        assert repr(stream) == "<Server: opt: TTYPE:24:?/- extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
+        assert repr(stream) == "<Server: opt: stdTTYPE:?/- extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
         await anyio.sleep(0.5)
 
     async with server(shell=server_shell) as srv, \
         srv.client() as client:
 
-        assert repr(client) == "<Client: opt: TTYPE:24:+/? extra: charset='' lang='C' cols=80 rows=25 term=None tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
+        assert repr(client) == "<Client: opt: stdTTYPE:+/? extra: charset='' lang='C' cols=80 rows=25 term=None tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
 
 
 @pytest.mark.anyio
@@ -315,9 +315,10 @@ async def test_telnet_server_negotiation_fail(server):
     _waiter = anyio.Event()
 
     class TimeoutServer(Server):
-        async def setup(self):
+        async def setup(self,tg):
             with pytest.raises(TimeoutError):
-                await super().setup(has_tterm=0.05)
+                async with anyio.create_task_group() as tg2:
+                    await super().setup(tg2, has_tterm=0.05)
 
             # Failed, so another request will imediately fail again
             with pytest.raises(TimeoutError):
@@ -332,17 +333,18 @@ async def test_telnet_server_negotiation_fail(server):
             assert b == b'\xff\xfd\x18'
             await _waiter.wait()
 
-    assert repr(srv.last) == "<TimeoutServer: opt: TTYPE:24:?/! extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
+    assert repr(srv.last) == "<TimeoutServer: opt: stdTTYPE:?/! extra: term='unknown' term_done=False charset='' cols=80 rows=25 timeout=300 mode:local -xon_any +slc_sim>"
 
 @pytest.mark.anyio
 async def test_telnet_client_negotiation_fail(bind_host, unused_tcp_port):
-    """Test asynctelnet.TelnetCLient() negotiation failure with server."""
+    """Test asynctelnet.TelnetClient() negotiation failure with server."""
     from asynctelnet.telopt import TTYPE
 
     class TimeoutClient(Client):
-        async def setup(self):
+        async def setup(self, tg):
             with pytest.raises(TimeoutError):
-                await super().setup(has_tterm=0.1)
+                async with anyio.create_task_group() as tg2:
+                    await super().setup(tg2, has_tterm=0.1)
 
             # Failed, so another request will imediately fail again
             with pytest.raises(TimeoutError):
@@ -360,7 +362,7 @@ async def test_telnet_client_negotiation_fail(bind_host, unused_tcp_port):
         async with open_connection(client_factory=TimeoutClient, host=bind_host, port=unused_tcp_port) as client:
             tg.cancel_scope.cancel()
 
-    assert repr(client) == "<TimeoutClient: opt: TTYPE:24:!/? extra: charset='UTF-8' lang='C.UTF-8' cols=80 rows=25 term='unknown' tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
+    assert repr(client) == "<TimeoutClient: opt: stdTTYPE:!/? extra: charset='UTF-8' lang='C.UTF-8' cols=80 rows=25 term='unknown' tspeed='38400,38400' xdisploc='' mode:local -xon_any +slc_sim>"
 
 @pytest.mark.anyio
 async def test_telnet_server_as_module():

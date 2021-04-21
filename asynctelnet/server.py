@@ -23,8 +23,8 @@ from functools import partial
 from .server_base import BaseServer
 from .accessories import function_lookup, _DEFAULT_LOGFMT, make_logger
 from .stream import SetCharset
-from .options import NAWS, NEW_ENVIRON, TTYPE, CHARSET, SGA, ECHO, BINARY
-from .telopt import SEND
+from .options import stdNAWS, stdNEW_ENVIRON, stdTTYPE, stdCHARSET, stdSGA, stdECHO, stdBINARY
+from .telopt import SEND, NAWS,NEW_ENVIRON,TTYPE,CHARSET,SGA,ECHO,BINARY
 
 
 __all__ = ('TelnetServer', 'server_loop', 'run_server', 'parse_server_args')
@@ -60,16 +60,16 @@ class TelnetServer(BaseServer):
         self.extra.rows = rows
         self.extra.timeout = timeout
 
-    async def setup(self, has_tterm=None):
-        self.opt.add(TTYPE)
-        self.opt.add(SGA)
-        self.opt.add(ECHO)
-        self.opt.add(BINARY)
-        self.opt.add(NEW_ENVIRON)
-        self.opt.add(NAWS)
-        self.opt.add(CHARSET)
+    async def setup(self, tg, has_tterm=None):
+        self.opt.add(stdTTYPE)
+        self.opt.add(stdSGA)
+        self.opt.add(stdECHO)
+        self.opt.add(stdBINARY)
+        self.opt.add(stdNEW_ENVIRON)
+        self.opt.add(stdNAWS)
+        self.opt.add(stdCHARSET)
 
-        await super().setup()
+        await super().setup(tg)
 
         # No terminal? don't try.
         if not isinstance(has_tterm, bool):
@@ -106,8 +106,6 @@ class TelnetServer(BaseServer):
         # East-Asia BBS and Western MUD systems.
         #return self.extra.charset or self.default_encoding
 
-    async def handle_will_new_environ(self):
-        return True
     async def handle_will_naws(self):
         return True
     async def handle_do_sga(self):
@@ -142,51 +140,6 @@ class TelnetServer(BaseServer):
         """
         self.extra.rows = rows
         self.extra.cols = cols
-
-    def on_request_environ(self):
-        """
-        Definition for NEW_ENVIRON request of client, :rfc:`1572`.
-
-        This method is a callback from :meth:`~.TelnetWriter.request_environ`,
-        first entered on receipt of (WILL, NEW_ENVIRON) by server.  The return
-        value *defines the request made to the client* for environment values.
-
-        :rtype list: a list of unicode character strings of US-ASCII
-            characters, indicating the environment keys the server requests
-            of the client.  If this list contains the special byte constants,
-            ``USERVAR`` or ``VAR``, the client is allowed to volunteer any
-            other additional user or system values.
-
-            Any empty return value indicates that no request should be made.
-
-        The default return value is::
-
-            ['LANG', 'TERM', 'COLUMNS', 'LINES', 'DISPLAY', 'COLORTERM',
-             VAR, USERVAR, 'COLORTERM']
-        """
-        from .telopt import VAR, USERVAR
-        return ['LANG', 'TERM', 'COLUMNS', 'LINES', 'DISPLAY', 'COLORTERM',
-                VAR, USERVAR]
-
-    def on_environ(self, mapping):
-        """Callback receives NEW_ENVIRON response, :rfc:`1572`."""
-        # A well-formed client responds with empty values for variables to
-        # mean "no value".  They might have it, they just may not wish to
-        # divulge that information.  We pop these keys as a side effect in
-        # the result statement of the following list comprehension.
-        no_value = [mapping.pop(key) or key
-                    for key, val in list(mapping.items())
-                    if not val]
-
-        # because we are working with "untrusted input", we make one fair
-        # distinction: all keys received by NEW_ENVIRON are in uppercase.
-        # this ensures a client may not override trusted values such as
-        # 'peer'.
-        u_mapping = {key.upper(): val for key, val in list(mapping.items())}
-
-        self.log.debug('on_environ received: {0!r}'.format(u_mapping))
-
-        self.extra.update(u_mapping)
 
     def _intercept(self, msg):
         super()._intercept(msg)

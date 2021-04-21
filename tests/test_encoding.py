@@ -3,14 +3,15 @@
 import anyio
 
 # local imports
-from asynctelnet.client import TelnetClient
-from tests.accessories import NoTtype, Server
+from tests.accessories import NoTtype, Server, Client
+from asynctelnet.options import stdBINARY, stdTTYPE, stdNEW_ENVIRON, BaseOption
+from asynctelnet.options.basic import _encode_env_buf,StdOption,FullOption
 
 # 3rd party
 import pytest
 
 
-class ClientTestTtype(NoTtype, TelnetClient):
+class ClientTestTtype(NoTtype, Client):
     pass
 
 class ServerTestTtype(NoTtype, Server):
@@ -72,12 +73,13 @@ async def test_telnet_server_encoding_client_will(server):
     """Server Default encoding (utf8) incoming when client WILL."""
     from asynctelnet.telopt import TTYPE, BINARY
 
-    async with server(factory=ServerTestTtype, encoding="utf8") as srv, \
+    async with server(factory=ServerTestTtype, encoding="utf8",
+            test_opt=(stdBINARY,stdTTYPE)) as srv, \
             srv.client(factory=ClientTestTtype, encoding="utf8") as client:
         await srv.evt.wait()
 
-        await client.local_option(BINARY, True)
-        await client.local_option(TTYPE, True)
+        assert await client.local_option(BINARY, True)
+        assert await client.local_option(TTYPE, True)
 
         # verify,
         assert srv.last.encoding(incoming=True) == 'utf8'
@@ -158,16 +160,21 @@ async def test_telnet_client_and_server_encoding_bidirectional(server):
 
 
 @pytest.mark.anyio
-async def test_telnet_server_encoding_by_LANG(
-        bind_host, unused_tcp_port):
+async def test_telnet_server_encoding_by_LANG(server):
     """Server's encoding negotiated by LANG value."""
     from asynctelnet.telopt import (
         IAC, WONT, DO, WILL, TTYPE, BINARY,
         WILL, SB, SE, IS, NEW_ENVIRON)
     from asynctelnet.telopt import TTYPE, BINARY
+    _waiter = anyio.Event()
 
-    async with server(factory=ServerTestTtype, encoding="utf8") as srv, \
-            srv.client(factory=ClientTestTtype, encoding="utf8") as client:
+    class Srv(Server):
+        def on_charset(self,cs):
+            super().on_charset(cs)
+            _waiter.set()
+
+    async with server(factory=Srv, encoding="utf8", test_opt=stdNEW_ENVIRON) as srv, \
+            srv.client(factory=ClientTestTtype, encoding="utf8",test_opt=StdOption.NEW_ENVIRON) as client:
         await srv.evt.wait()
 
         await client.remote_option(BINARY, True)
@@ -175,110 +182,86 @@ async def test_telnet_server_encoding_by_LANG(
         await client.local_option(NEW_ENVIRON, True)
         await client.local_option(TTYPE, False)
 
-    writer.write(IAC + WILL + BINARY)
-    writer.write(IAC + WILL + NEW_ENVIRON)
-    writer.write(IAC + SB + NEW_ENVIRON + IS +
-                 asynctelnet.stream._encode_env_buf({
+        print("XA")
+        await client.send_subneg(NEW_ENVIRON, IS,
+                 _encode_env_buf({
                      'LANG': 'uk_UA.KOI8-U',
-                 }) + IAC + SE)
-    writer.write(IAC + WONT + TTYPE)
+                 }))
 
-    # verify,
-    srv_instance = await asyncio.wait_for(_waiter, 0.5)
-    assert srv_instance.encoding(incoming=True) == 'KOI8-U'
-    assert srv_instance.encoding(outgoing=True) == 'KOI8-U'
-    assert srv_instance.encoding(incoming=True, outgoing=True) == 'KOI8-U'
-    assert srv_instance.extra.LANG == 'uk_UA.KOI8-U'
+        print("XB")
+        with anyio.fail_after(0.5):
+            await _waiter.wait()
+        print("XC")
+
+        assert srv.last.encoding(incoming=True) == 'KOI8-U'
+        assert srv.last.encoding(outgoing=True) == 'KOI8-U'
+        assert srv.last.encoding(incoming=True, outgoing=True) == 'KOI8-U'
+        assert srv.last.extra.LANG == 'uk_UA.KOI8-U'
 
 
 @pytest.mark.anyio
-async def test_telnet_server_binary_mode(
-        bind_host, unused_tcp_port):
+async def test_telnet_server_binary_mode(server):
     """Server's encoding=False creates a binary reader/writer interface."""
+
     from asynctelnet.telopt import IAC, WONT, DO, TTYPE, BINARY
     # given
     _waiter = anyio.Event()
 
-    async def binary_shell(reader, writer):
+    async def binary_shell(stream):
         # our reader and writer should provide binary output
-        writer.write(b'server_output')
+        await stream.send(b'server_output')
 
-        val = await reader.readexactly(1)
+        val = await stream.read_exactly(1)
         assert val == b'c'
-        val = await reader.readexactly(len(b'lient '))
+        val = await stream.read_exactly(len(b'lient '))
         assert val == b'lient '
-        writer.close()
-        val = await reader.read()
+        val = await stream.receive()
         assert val == b'output'
 
-    await asynctelnet.create_server(
-        host=bind_host, port=unused_tcp_port,
-        shell=binary_shell, _waiter_connected=_waiter, encoding=False)
+    async with server(factory=Server, encoding=False, shell=binary_shell) as srv, \
+            srv.client(factory=Client, encoding=False,test_opt=BaseOption.TTYPE, with_reader=False) as client:
 
-    reader, writer = await asyncio.open_connection(
-        host=bind_host, port=unused_tcp_port)
+        # yeah, very funny.
+        #val = await reader.readexactly(len(IAC + DO + TTYPE))
+        #assert val == IAC + DO + TTYPE
 
-    # exercise, server will binary
-    val = await reader.readexactly(len(IAC + DO + TTYPE))
-    assert val == IAC + DO + TTYPE
+        #client.send(IAC + WONT + TTYPE)
+        await client.send(b'client output')
 
-    writer.write(IAC + WONT + TTYPE)
-    writer.write(b'client output')
+        val = await client.read_exactly(len(b'server_output'))
+        assert val == b'server_output'
 
-    val = await reader.readexactly(len(b'server_output'))
-    assert val == b'server_output'
-
-    eof = await reader.read()
-    assert eof == b''
+        with pytest.raises(anyio.EndOfStream):
+            await client.receive()
 
 
 @pytest.mark.anyio
-async def test_telnet_client_and_server_escape_iac_encoding(
-        bind_host, unused_tcp_port):
+async def test_telnet_client_and_server_escape_iac_encoding(server):
     """Ensure that IAC (byte 255) may be sent across the wire by encoding."""
     # given
-    _waiter = anyio.Event()
     given_string = ''.join(chr(val) for val in list(range(256))) * 2
 
-    await asynctelnet.create_server(
-        host=bind_host, port=unused_tcp_port, _waiter_connected=_waiter,
-        encoding='iso8859-1', connect_maxwait=0.05)
+    async with server(factory=Server, encoding='iso8859-1', test_opt=(FullOption.BINARY,stdTTYPE)) as srv, \
+            srv.client(factory=Client, encoding='iso8859-1', term="foo", test_opt=(FullOption.BINARY,stdTTYPE), with_reader=False) as client:
 
-    client_reader, client_writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port,
-        encoding='iso8859-1', connect_minwait=0.05)
-
-    server = await asyncio.wait_for(_waiter, 0.5)
-
-    server.writer.write(given_string)
-    result = await client_reader.readexactly(len(given_string))
-    assert result == given_string
-    server.writer.close()
-    eof = await asyncio.wait_for(client_reader.read(), 0.5)
-    assert eof == ''
+        await srv.evt.wait()
+        await srv.last.send(given_string)
+        result = await client.read_exactly(len(given_string))
+        assert result == given_string
 
 
 @pytest.mark.anyio
-async def test_telnet_client_and_server_escape_iac_binary(
-        bind_host, unused_tcp_port):
+async def test_telnet_client_and_server_escape_iac_binary(server):
     """Ensure that IAC (byte 255) may be sent across the wire in binary."""
     # given
     _waiter = anyio.Event()
     given_string = bytes(range(256)) * 2
 
-    await asynctelnet.create_server(
-        host=bind_host, port=unused_tcp_port, _waiter_connected=_waiter,
-        encoding=False, connect_maxwait=0.05)
+    async with server(factory=Server, encoding=False, test_opt=FullOption.BINARY) as srv, \
+            srv.client(factory=Client, encoding=False,
+                    test_opt=FullOption.BINARY, with_reader=False) as client:
 
-    client_reader, client_writer = await asynctelnet.open_connection(
-        host=bind_host, port=unused_tcp_port,
-        encoding=False, connect_minwait=0.05)
-
-    server = await asyncio.wait_for(_waiter, 0.5)
-
-    server.writer.write(given_string)
-    result = await client_reader.readexactly(len(given_string))
-    assert result == given_string
-    server.writer.close()
-    eof = await asyncio.wait_for(client_reader.read(), 0.5)
-    assert eof == b''
+        await srv.evt.wait()
+        await srv.last.send(given_string)
+        result = await client.read_exactly(len(given_string))
+        assert result == given_string

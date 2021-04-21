@@ -17,7 +17,8 @@ from functools import partial
 from .accessories import repr_mapping, make_logger, _DEFAULT_LOGFMT, function_lookup
 from .client_base import BaseClient
 from .stream import SetCharset
-from .options import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
+from .telopt import TTYPE, TSPEED, XDISPLOC, NEW_ENVIRON, CHARSET, NAWS, SGA, ECHO, BINARY
+from .options import stdTTYPE, stdTSPEED, stdXDISPLOC, stdNEW_ENVIRON, stdCHARSET, stdNAWS, stdSGA, stdECHO, stdBINARY
 
 __all__ = ('TelnetClient', 'TelnetTerminalClient', 'open_connection')
 
@@ -34,8 +35,8 @@ class TelnetClient(BaseClient):
     #: transmission.  When encoding is specified (utf8 by default), the LANG
     #: variable must also contain a locale, this value is used, providing a
     #: full default LANG value of 'C.utf8'
-    DEFAULT_LOCALE = 'C'
-    _charset_tried = None
+
+    DEFAULT_LOCALE="C"
 
     def __init__(self, conn, term='unknown', cols=80, rows=25,
                  tspeed=(38400, 38400), xdisploc='',
@@ -58,17 +59,17 @@ class TelnetClient(BaseClient):
         self.extra.tspeed = '{},{}'.format(*tspeed)
         self.extra.xdisploc = xdisploc
 
-    async def setup(self, has_tterm=None):
+    async def setup(self, tg, has_tterm=None):
         """Called after setting up."""
-        self.opt.add(TTYPE)
-        self.opt.add(SGA)
-        self.opt.add(ECHO)
-        self.opt.add(BINARY)
-        self.opt.add(NEW_ENVIRON)
-        self.opt.add(NAWS)
-        self.opt.add(CHARSET)
+        self.opt.add(stdTTYPE)
+        self.opt.add(stdSGA)
+        self.opt.add(stdECHO)
+        self.opt.add(stdBINARY)
+        self.opt.add(stdNEW_ENVIRON)
+        self.opt.add(stdNAWS)
+        self.opt.add(stdCHARSET)
 
-        await super().setup()
+        await super().setup(tg)
 
         # No terminal? don't try.
         if not isinstance(has_tterm, bool):
@@ -100,8 +101,6 @@ class TelnetClient(BaseClient):
 #               ):
 #           self.set_ext_send_callback(opt, func)
 
-    async def handle_do_new_environ(self):
-        return True
     async def handle_do_naws(self):
         return True
     async def handle_will_sga(self):
@@ -130,76 +129,6 @@ class TelnetClient(BaseClient):
         """Callback for responding to XDISPLOC requests."""
         return self.extra.xdisploc
 
-    async def send_env(self, keys):
-        """
-        Callback for responding to NEW_ENVIRON requests.
-
-        :param dict keys: Values are requested for the keys specified.
-           When empty, all environment values that wish to be volunteered
-           should be returned.
-        :returns: dictionary of environment values requested, or an
-            empty string for keys not available. A return value must be
-            given for each key requested.
-        :rtype: dict
-        """
-        env = {
-            'LANG': self.extra.lang,
-            'TERM': self.extra.term,
-            'DISPLAY': self.extra.xdisploc,
-            'LINES': self.extra.rows,
-            'COLUMNS': self.extra.cols,
-        }
-        return {key: env.get(key, '') for key in keys} or env
-
-    def select_charset(self, offers):
-        """
-        Callback for responding to CHARSET requests.
-
-        Receives a list of character encodings offered by the server
-        as ``offers`` such as ``('LATIN-1', 'UTF-8')``, for which the
-        client may return a value it agrees to use, or None to disagree to
-        all available offers.
-
-        The default implementation selects any matching encoding that
-        Python is capable of using, preferring any that matches
-        :py:attr:`encoding` if matched in the offered list.
-
-        :param list offered: list of CHARSET options offered by server.
-        :returns: character encoding agreed to be used.
-        :rtype: Union[str, None]
-        """
-        selected = None
-        cur = self.extra.charset
-        if cur:
-            cur = cur.lower()
-            for offer in offers:
-                if offer.lower() == cur:
-                    self.log.debug('encoding unchanged: %s', offer)
-                    return offer
-
-        if self._charset_tried is not None:
-            self._charset_tried = None
-        elif len(offers) == 1 and cur:
-            self.log.debug('Skipping %s: we want %s', offers[0], cur)
-            self._charset_tried = offers[0]
-            return None
-
-        for offer in offers:
-            try:
-                codec = codecs.lookup(offer)
-            except LookupError as err:
-                self.log.info('Unknown: %s', err)
-            else:
-                self.extra.charset = codec.name
-                self.extra.lang = self.DEFAULT_LOCALE + '.' + codec.name
-                selected = offer
-                break
-        if selected is not None:
-            self.log.debug('encoding negotiated: %s', selected)
-        else:
-            self.log.warning('No suitable encoding offered by server: %r.', offers)
-        return selected
-
     async def send_naws(self):
         """
         Callback for responding to NAWS requests.
@@ -221,19 +150,8 @@ class TelnetTerminalClient(TelnetClient):
         """
         return self._winsize()
 
-    def send_env(self, keys):
-        """
-        Callback replies to request for env values, NEW_ENVIRON :rfc:`1572`.
-
-        :rtype: dict
-        :returns: super class value updated with window LINES and COLUMNS.
-        """
-        env = super().send_env(keys)
-        env['LINES'], env['COLUMNS'] = self._winsize()
-        return env
-
     @staticmethod
-    def _winsize():
+    def get_windowsize():
         try:
             import fcntl
             import termios

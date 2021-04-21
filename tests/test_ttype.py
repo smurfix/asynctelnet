@@ -3,16 +3,16 @@
 import anyio
 
 # local imports
-from asynctelnet.telopt import IS, WILL
-from asynctelnet.options import TTYPE
+from asynctelnet.telopt import IS, WILL, TTYPE
+from asynctelnet.options import stdTTYPE
 from tests.accessories import BaseTestClient, Server, NoTtype, ignore_option
 
 # 3rd party
 import pytest
 
 class _NHT:
-    async def setup(self, has_tterm):
-        await super().setup()
+    async def setup(self, tg, *, has_tterm):
+        await super().setup(tg)
 
 class ServerTestTtype(NoTtype, _NHT, Server):
     pass
@@ -25,7 +25,7 @@ async def test_telnet_server_on_ttype(server):
     # given
     _waiter = anyio.Event()
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         async def handle_recv(self, ttype):
             await super().handle_recv(ttype)
             s=self.stream
@@ -69,7 +69,7 @@ async def test_telnet_server_on_ttype_beyond_max(server):
     assert len(given_ttypes) > Server.TTYPE_LOOPMAX
 
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         async def handle_recv(self, ttype):
             await super().handle_recv(ttype)
             s=self.stream
@@ -109,7 +109,7 @@ async def test_telnet_server_on_ttype_empty(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', '', 'BETA')
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         async def handle_recv(self, ttype):
             await super().handle_recv(ttype)
             if ttype == given_ttypes[-1]:
@@ -140,7 +140,7 @@ async def test_telnet_server_on_ttype_looped(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'ALPHA')
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         count = 1
 
         async def handle_recv(self, ttype):
@@ -175,7 +175,7 @@ async def test_telnet_server_on_ttype_repeated(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'GAMMA', 'GAMMA')
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         count = 1
 
         async def handle_recv(self, ttype):
@@ -211,7 +211,7 @@ async def test_telnet_server_on_ttype_mud(server):
     _waiter = anyio.Event()
     given_ttypes = ('ALPHA', 'BETA', 'MTTS 137')
 
-    class OptTtype(TTYPE):
+    class OptTtype(stdTTYPE):
         count = 1
 
         async def handle_recv(self, ttype):
