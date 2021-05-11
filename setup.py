@@ -27,7 +27,7 @@ setup(name='asynctelnet',
       author='Matthias Urlichs',
       description="Python 3 anyio Telnet server and client Protocol library",
       long_description=_get_long_description(fname=_get_here('README.rst')),
-      packages=['asynctelnet'],
+      packages=['asynctelnet', 'asynctelnet.options'],
       package_data={'': ['README.rst', 'requirements.txt'], },
       entry_points={
          'console_scripts': [
