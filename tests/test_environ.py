@@ -5,10 +5,6 @@ import asyncio
 # local imports
 import asynctelnet
 import asynctelnet.stream
-from tests.accessories import (
-    unused_tcp_port,
-    bind_host
-)
 
 # 3rd party
 import pytest
