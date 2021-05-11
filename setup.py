@@ -39,7 +39,7 @@ setup(name='asynctelnet',
       zip_safe=True,
       install_requires=[
          'outcome>=1.1',
-         'anyio==3.0.0rc3',
+         'anyio<4,>=3',
       ],
       keywords=', '.join(('telnet', 'server', 'client', 'bbs', 'mud', 'utf8',
                           'cp437', 'api', 'library', 'anyio', 'trio', 'asyncio', 'talker')),
