@@ -7,10 +7,6 @@ import pytest
 
 # local
 import asynctelnet
-from tests.accessories import (
-    unused_tcp_port,
-    bind_host
-)
 
 
 def test_reader_instantiation_safety():

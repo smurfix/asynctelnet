@@ -27,7 +27,7 @@ setup(name='asynctelnet',
       author='Matthias Urlichs',
       description="Python 3 anyio Telnet server and client Protocol library",
       long_description=_get_long_description(fname=_get_here('README.rst')),
-      packages=['asynctelnet'],
+      packages=['asynctelnet', 'asynctelnet.options'],
       package_data={'': ['README.rst', 'requirements.txt'], },
       entry_points={
          'console_scripts': [
@@ -39,7 +39,7 @@ setup(name='asynctelnet',
       zip_safe=True,
       install_requires=[
          'outcome>=1.1',
-         'anyio==3.0.0rc3',
+         'anyio<4,>=3',
       ],
       keywords=', '.join(('telnet', 'server', 'client', 'bbs', 'mud', 'utf8',
                           'cp437', 'api', 'library', 'anyio', 'trio', 'asyncio', 'talker')),

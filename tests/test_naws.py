@@ -6,10 +6,6 @@ import struct
 
 # local imports
 import asynctelnet
-from tests.accessories import (
-    unused_tcp_port,
-    bind_host
-)
 
 # 3rd party
 import pytest
